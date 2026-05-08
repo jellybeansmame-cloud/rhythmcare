@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DB診断</title>
+<style>
+body { font-family: sans-serif; padding: 20px; background: #f5f0eb; }
+pre { background: white; padding: 12px; border-radius: 8px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; }
+button { padding: 12px 20px; background: #5a8a5e; color: white; border: none; border-radius: 8px; font-size: 16px; margin-bottom: 12px; width: 100%; }
+</style>
+</head>
+<body>
+<h2>🔍 DB診断</h2>
+<button onclick="check()">診断開始</button>
+<pre id="out">ボタンを押してください</pre>
+<script>
+async function check() {
+  const out = document.getElementById('out');
+  out.textContent = '診断中...';
+  try {
+    const req = indexedDB.open('RhythmCareDB', 1);
+    req.onsuccess = async e => {
+      const db = e.target.result;
+      const stores = Array.from(db.objectStoreNames);
+      
+      let result = `✅ DB接続成功\nストア: ${stores.join(', ')}\n\n`;
+      
+      for (const store of stores) {
+        const tx = db.transaction(store, 'readonly');
+        const count = await new Promise(r => tx.objectStore(store).count().onsuccess = e => r(e.target.result));
+        result += `${store}: ${count}件\n`;
+        
+        if (store === 'meta') {
+          const all = await new Promise(r => tx.objectStore(store).getAll().onsuccess = e => r(e.target.result));
+          result += `  内容: ${JSON.stringify(all)}\n`;
+        }
+      }
+      out.textContent = result;
+    };
+    req.onerror = e => { out.textContent = '❌ DB接続失敗: ' + e.target.error; };
+    req.onblocked = () => { out.textContent = '⚠️ DBがブロックされています'; };
+  } catch(e) {
+    out.textContent = '❌ エラー: ' + e.message;
+  }
+}
+</script>
+</body>
+</html>
