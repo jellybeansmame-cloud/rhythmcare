@@ -1,0 +1,16 @@
+{
+  "name": "リズムケア",
+  "short_name": "リズムケア",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f5f0eb",
+  "theme_color": "#5a8a5e",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
