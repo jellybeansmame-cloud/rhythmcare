@@ -1,0 +1,1519 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>リズムケア</title>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<meta name="theme-color" content="#5a8a5e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="リズムケア">
+<style>
+  :root {
+    --bg: #f5f0eb;
+    --surface: #ffffff;
+    --surface2: #faf7f4;
+    --border: #e0d8d0;
+    --text: #2a2318;
+    --text2: #7a6e63;
+    --accent: #c9624f;
+    --accent2: #e8957f;
+    --green: #5a8a5e;
+    --green2: #8ab88e;
+    --blue: #4a6fa5;
+    --yellow: #d4a843;
+    --shadow: 0 2px 12px rgba(42,35,24,0.08);
+    --shadow-lg: 0 8px 32px rgba(42,35,24,0.12);
+    --radius: 16px;
+    --radius-sm: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; background: var(--bg); font-family: 'Zen Kaku Gothic New', sans-serif; color: var(--text); }
+
+  /* ヘッダー */
+  header {
+    position: sticky; top: 0; z-index: 100;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    box-shadow: var(--shadow);
+  }
+  .header-title { font-size: 18px; font-weight: 700; letter-spacing: 0.05em; }
+  .header-date { font-size: 13px; color: var(--text2); font-family: 'DM Mono', monospace; }
+  .header-nav { display: flex; gap: 4px; }
+  .nav-btn {
+    background: none; border: none; padding: 6px 10px; border-radius: var(--radius-sm);
+    font-size: 20px; cursor: pointer; transition: background 0.15s;
+  }
+  .nav-btn:hover, .nav-btn.active { background: var(--bg); }
+
+  /* タブ */
+  .tabs {
+    display: flex; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 57px; z-index: 99;
+  }
+  .tab {
+    flex: 1; padding: 10px 4px; text-align: center; font-size: 12px; font-weight: 500;
+    border: none; background: none; cursor: pointer; color: var(--text2);
+    border-bottom: 2px solid transparent; transition: all 0.15s;
+  }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* メインコンテンツ */
+  .page { display: none; padding: 16px; max-width: 600px; margin: 0 auto; }
+  .page.active { display: block; }
+
+  /* 日付ナビ */
+  .date-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0;
+    background: var(--surface); border-radius: var(--radius); padding: 12px 16px;
+    box-shadow: var(--shadow);
+  }
+  .date-nav-btn {
+    background: none; border: none; font-size: 20px; cursor: pointer;
+    color: var(--text2); padding: 4px 8px; border-radius: 8px; transition: background 0.15s;
+  }
+  .date-nav-btn:hover { background: var(--bg); }
+  .date-nav-label { font-weight: 700; font-size: 16px; }
+  .date-today-btn {
+    font-size: 11px; padding: 4px 10px; border-radius: 20px;
+    background: var(--accent); color: white; border: none; cursor: pointer;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+  }
+
+  /* 記録カード */
+  .record-card {
+    background: var(--surface); border-radius: var(--radius);
+    padding: 14px 16px; margin-bottom: 10px;
+    box-shadow: var(--shadow); border: 1px solid var(--border);
+  }
+  .record-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+  }
+  .record-icon { font-size: 20px; }
+  .record-title { font-size: 14px; font-weight: 700; flex: 1; }
+  .record-unit { font-size: 12px; color: var(--text2); font-family: 'DM Mono', monospace; }
+
+  /* 入力要素 */
+  input[type=number], input[type=text], textarea {
+    width: 100%; border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    padding: 8px 12px; font-size: 15px; font-family: 'Zen Kaku Gothic New', sans-serif;
+    background: var(--surface2); color: var(--text); outline: none; transition: border 0.15s;
+  }
+  input[type=number]:focus, input[type=text]:focus, textarea:focus {
+    border-color: var(--accent);
+  }
+  textarea { resize: vertical; min-height: 80px; }
+
+  /* チェックボックス */
+  .check-row {
+    display: flex; align-items: center; gap: 10px;
+  }
+  .check-toggle {
+    width: 44px; height: 26px; border-radius: 13px;
+    background: var(--border); border: none; cursor: pointer;
+    position: relative; transition: background 0.2s; flex-shrink: 0;
+  }
+  .check-toggle::after {
+    content: ''; position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: white; transition: transform 0.2s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+  }
+  .check-toggle.on { background: var(--green); }
+  .check-toggle.on::after { transform: translateX(18px); }
+
+  /* 評価（星/数値） */
+  .rating-row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .rating-btn {
+    width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--border);
+    background: var(--surface2); cursor: pointer; font-size: 14px; font-weight: 700;
+    color: var(--text2); transition: all 0.15s; display: flex; align-items: center; justify-content: center;
+  }
+  .rating-btn.selected { background: var(--accent); border-color: var(--accent); color: white; }
+
+  /* 数値 2フィールド（血圧など） */
+  .dual-input { display: flex; gap: 8px; align-items: center; }
+  .dual-input span { font-size: 18px; color: var(--text2); }
+
+  /* 保存ボタン */
+  .save-btn {
+    width: 100%; padding: 14px; border-radius: var(--radius); border: none;
+    background: var(--accent); color: white; font-size: 16px; font-weight: 700;
+    cursor: pointer; margin-top: 16px; font-family: 'Zen Kaku Gothic New', sans-serif;
+    transition: background 0.15s; letter-spacing: 0.05em;
+  }
+  .save-btn:hover { background: #b5503e; }
+  .save-btn:active { transform: scale(0.98); }
+
+  /* 履歴ページ */
+  .history-item {
+    background: var(--surface); border-radius: var(--radius-sm);
+    padding: 12px 14px; margin-bottom: 8px;
+    border: 1px solid var(--border);
+    cursor: pointer; transition: box-shadow 0.15s;
+  }
+  .history-item:hover { box-shadow: var(--shadow); }
+  .history-item-date { font-size: 12px; color: var(--text2); font-family: 'DM Mono', monospace; margin-bottom: 4px; }
+  .history-item-content { font-size: 14px; }
+  .history-empty { text-align: center; color: var(--text2); padding: 40px 0; font-size: 14px; }
+
+  /* グラフページ */
+  .chart-selector { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .chart-selector-btn {
+    padding: 6px 14px; border-radius: 20px; border: 1.5px solid var(--border);
+    background: var(--surface); cursor: pointer; font-size: 13px;
+    font-family: 'Zen Kaku Gothic New', sans-serif; transition: all 0.15s;
+  }
+  .chart-selector-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
+  canvas { max-width: 100%; }
+  .chart-wrap { background: var(--surface); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+
+  /* 設定ページ */
+  .settings-section { margin-bottom: 24px; }
+  .settings-title {
+    font-size: 13px; font-weight: 700; color: var(--text2); letter-spacing: 0.08em;
+    text-transform: uppercase; margin-bottom: 10px; padding-left: 4px;
+  }
+  .item-row {
+    display: flex; align-items: center; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px 14px; margin-bottom: 6px; gap: 10px;
+  }
+  .item-row-title { flex: 1; font-size: 14px; }
+  .item-row-type { font-size: 11px; color: var(--text2); background: var(--bg); padding: 2px 8px; border-radius: 10px; }
+  .item-row-del {
+    background: none; border: none; color: var(--accent); font-size: 18px;
+    cursor: pointer; padding: 4px; line-height: 1;
+  }
+  .drag-handle { color: var(--text2); font-size: 18px; cursor: grab; user-select: none; }
+  .text-preview {
+    border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    padding: 10px 12px; background: var(--surface2); cursor: pointer;
+    min-height: 48px; transition: border 0.15s;
+  }
+  .text-preview:hover { border-color: var(--accent); }
+
+  /* インポートエリア */
+  .import-area {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 32px 16px; text-align: center; cursor: pointer;
+    transition: border-color 0.15s; background: var(--surface2);
+    margin-bottom: 16px;
+  }
+  .import-area:hover { border-color: var(--accent); }
+  .import-area p { color: var(--text2); font-size: 14px; margin-top: 8px; }
+  .import-icon { font-size: 40px; }
+
+  /* 追加フォーム */
+  .add-form {
+    background: var(--surface); border-radius: var(--radius);
+    padding: 16px; box-shadow: var(--shadow); border: 1px solid var(--border);
+    margin-bottom: 16px;
+  }
+  .add-form select, .add-form input[type=text] {
+    border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+    padding: 8px 12px; font-size: 14px; font-family: 'Zen Kaku Gothic New', sans-serif;
+    background: var(--surface2); color: var(--text); outline: none;
+    width: 100%; margin-bottom: 8px;
+  }
+  .add-form select:focus, .add-form input[type=text]:focus { border-color: var(--accent); }
+  .add-btn {
+    padding: 10px 20px; background: var(--green); color: white; border: none;
+    border-radius: var(--radius-sm); font-size: 14px; font-weight: 700;
+    cursor: pointer; font-family: 'Zen Kaku Gothic New', sans-serif;
+  }
+
+  /* トースト */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+    background: var(--text); color: white; padding: 10px 24px; border-radius: 24px;
+    font-size: 14px; z-index: 999; transition: transform 0.3s; pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* モーダル */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+    z-index: 200; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: var(--surface); border-radius: var(--radius); padding: 20px;
+    width: 100%; max-width: 480px; max-height: 80vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 16px; margin-bottom: 16px; }
+  .modal-close {
+    float: right; background: none; border: none; font-size: 20px;
+    cursor: pointer; color: var(--text2); line-height: 1;
+  }
+  .modal-date-title { font-size: 15px; font-weight: 700; margin-bottom: 12px; color: var(--accent); }
+  .modal-record-item { padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .modal-record-item:last-child { border-bottom: none; }
+  .modal-record-name { font-weight: 500; color: var(--text2); font-size: 12px; }
+  .modal-record-val { font-size: 15px; margin-top: 2px; }
+
+  /* ローディング */
+  .loading { text-align: center; padding: 40px; color: var(--text2); font-size: 14px; }
+  .spinner {
+    width: 32px; height: 32px; border: 3px solid var(--border);
+    border-top-color: var(--accent); border-radius: 50%;
+    animation: spin 0.8s linear infinite; margin: 0 auto 12px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* カレンダー */
+  .calendar-grid {
+    display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px;
+    background: var(--surface); border-radius: var(--radius); padding: 12px;
+    box-shadow: var(--shadow); margin-bottom: 16px;
+  }
+  .cal-header { text-align: center; font-size: 11px; color: var(--text2); padding: 4px 0; font-weight: 700; }
+  .cal-day {
+    text-align: center; padding: 6px 2px; font-size: 13px; border-radius: 8px;
+    cursor: pointer; transition: background 0.15s; position: relative;
+  }
+  .cal-day:hover { background: var(--bg); }
+  .cal-day.has-data::after {
+    content: ''; position: absolute; bottom: 2px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+  }
+  .cal-day.today { background: var(--accent); color: white; font-weight: 700; }
+  .cal-day.today::after { background: white; }
+  .cal-day.other-month { color: var(--border); }
+  .cal-month-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; background: var(--surface); border-radius: var(--radius);
+    margin-bottom: 8px; box-shadow: var(--shadow);
+  }
+  .cal-month-nav button { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--text2); }
+  .cal-month-label { font-weight: 700; font-size: 15px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-title">🌿 リズムケア</div>
+  <div class="header-date" id="headerDate"></div>
+</header>
+
+<div class="tabs">
+  <button class="tab active" data-tab="today">📝 今日</button>
+  <button class="tab" data-tab="history">📅 履歴</button>
+  <button class="tab" data-tab="graph">📈 グラフ</button>
+  <button class="tab" data-tab="settings">⚙️ 設定</button>
+</div>
+
+<!-- 今日ページ -->
+<div class="page active" id="tab-today" style="padding:0;">
+  <!-- 固定ヘッダー -->
+  <div style="position:sticky;top:107px;z-index:98;background:var(--bg);padding:10px 16px 10px;border-bottom:1px solid var(--border);box-shadow:0 2px 8px rgba(42,35,24,0.07);">
+    <div class="date-nav" style="margin-bottom:8px;">
+      <button class="date-nav-btn" id="prevDay">‹</button>
+      <div>
+        <div class="date-nav-label" id="currentDateLabel"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="date-today-btn" id="goToday">今日</button>
+        <button class="date-nav-btn" id="nextDay">›</button>
+      </div>
+    </div>
+    <button class="save-btn" id="saveBtn" style="margin-top:0;">💾 保存</button>
+  </div>
+  <!-- スクロール領域 -->
+  <div id="recordCards" style="padding:16px;max-width:600px;margin:0 auto;"></div>
+</div>
+
+<!-- 履歴ページ -->
+<div class="page" id="tab-history">
+  <div class="cal-month-nav">
+    <button id="calPrev">‹</button>
+    <div class="cal-month-label" id="calMonthLabel"></div>
+    <button id="calNext">›</button>
+  </div>
+  <div class="calendar-grid" id="calendarGrid"></div>
+  <div id="historyList"></div>
+</div>
+
+<!-- グラフページ -->
+<div class="page" id="tab-graph">
+  <div class="chart-selector" id="chartSelector"></div>
+  <div class="chart-wrap">
+    <canvas id="chartCanvas" height="220"></canvas>
+  </div>
+  <div id="chartEmpty" class="history-empty" style="display:none">データがありません</div>
+</div>
+
+<!-- 設定ページ -->
+<div class="page" id="tab-settings">
+  <div class="settings-section">
+    <div class="settings-title">データインポート</div>
+    <div class="import-area" id="importArea">
+      <div class="import-icon">📂</div>
+      <p>RhythmCare.sqlite3 をタップして選択</p>
+      <input type="file" id="importFile" accept=".sqlite3,.db,.sqlite" style="display:none">
+    </div>
+    <div id="importStatus" style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:16px;"></div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title">表示項目を追加</div>
+    <div class="add-form">
+      <input type="text" id="newItemTitle" placeholder="項目名（例：水を飲む）">
+      <select id="newItemType">
+        <option value="10">チェック（達成/未達成）</option>
+        <option value="4">数値入力</option>
+        <option value="12">評価（1〜5）</option>
+        <option value="14">テキストメモ</option>
+        <option value="2">2値入力（上/下 など）</option>
+      </select>
+      <input type="text" id="newItemUnit" placeholder="単位（例：kg、回、ml）任意">
+      <button class="add-btn" id="addItemBtn">＋ 追加</button>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title">表示項目一覧（ドラッグで並べ替え）</div>
+    <div id="settingsItemList"></div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title">非表示の項目から追加</div>
+    <div id="hiddenItemList"></div>
+  </div>
+</div>
+
+<!-- 詳細モーダル -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <button class="date-nav-btn" id="modalPrevDay" style="font-size:22px;">&#8249;</button>
+      <div class="modal-date-title" id="modalDateTitle" style="margin-bottom:0;flex:1;text-align:center;"></div>
+      <button class="date-nav-btn" id="modalNextDay" style="font-size:22px;">&#8250;</button>
+      <button class="modal-close" id="modalClose" style="margin-left:8px;">&#x2715;</button>
+    </div>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- テキスト入力モーダル -->
+<div class="modal-overlay" id="textInputOverlay">
+  <div class="modal" style="max-height:90vh;display:flex;flex-direction:column;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <div style="font-size:15px;font-weight:700;" id="textInputTitle"></div>
+      <button class="modal-close" id="textInputClose">&#x2715;</button>
+    </div>
+    <textarea id="textInputArea" lang="ja" placeholder="記録を入力..."
+      style="flex:1;min-height:200px;max-height:60vh;resize:none;border:1.5px solid var(--border);border-radius:10px;padding:10px;font-size:15px;font-family:'Zen Kaku Gothic New',sans-serif;background:var(--surface2);color:var(--text);outline:none;line-height:1.7;overflow-y:auto;"></textarea>
+    <button onclick="saveTextModal()" style="margin-top:12px;padding:12px;background:var(--accent);color:white;border:none;border-radius:12px;font-size:16px;font-weight:700;font-family:'Zen Kaku Gothic New',sans-serif;cursor:pointer;">✅ 確定</button>
+  </div>
+</div>
+
+<!-- 項目別履歴モーダル -->
+<div class="modal-overlay" id="itemHistoryOverlay">
+  <div class="modal" style="max-height:90vh;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+      <div style="font-size:16px;font-weight:700;flex:1;" id="itemHistoryTitle"></div>
+      <button class="modal-close" id="itemHistoryClose">&#x2715;</button>
+    </div>
+    <!-- モード切替 -->
+    <div style="display:flex;gap:8px;margin-bottom:14px;" id="itemHistoryModeTabs">
+      <button class="chart-selector-btn active" data-mode="calendar" id="modeCalBtn">📅 カレンダー</button>
+      <button class="chart-selector-btn" data-mode="list" id="modeListBtn">📋 リスト</button>
+    </div>
+    <div id="itemHistoryCalendar"></div>
+    <div id="itemHistoryList" style="display:none;max-height:60vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
+<script>
+// ==============================
+// 設定
+// ==============================
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbze-zh-Z4wSFnzSAmxyPCs5K1lF-PF1-Jh0aQL3c8RvE2Q0z30fh7FyQwQRBIqMWv5b/exec';
+const LS_RECORDS = 'rc_records';
+const LS_TYPES   = 'rc_types';
+const LS_META    = 'rc_meta';
+const ONE_YEAR_AGO = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 1);
+  return d.toISOString().slice(0, 10);
+};
+
+// ==============================
+// LocalStorage層
+// ==============================
+function lsGetRecords() {
+  try { return JSON.parse(localStorage.getItem(LS_RECORDS) || '[]'); } catch(e) { return []; }
+}
+function lsSetRecords(records) {
+  localStorage.setItem(LS_RECORDS, JSON.stringify(records));
+}
+function lsGetTypes() {
+  try { return JSON.parse(localStorage.getItem(LS_TYPES) || '[]'); } catch(e) { return []; }
+}
+function lsSetTypes(types) {
+  localStorage.setItem(LS_TYPES, JSON.stringify(types));
+}
+function lsGetMeta() {
+  try { return JSON.parse(localStorage.getItem(LS_META) || '{}'); } catch(e) { return {}; }
+}
+function lsSetMeta(meta) {
+  localStorage.setItem(LS_META, JSON.stringify(meta));
+}
+
+// ==============================
+// DB互換レイヤー（LocalStorageメイン）
+// ==============================
+async function dbGetAll(store) {
+  if (store === 'types') return lsGetTypes();
+  if (store === 'records') return lsGetRecords();
+  if (store === 'meta') return Object.entries(lsGetMeta()).map(([k,v]) => ({key:k, value:v}));
+  return [];
+}
+
+async function dbGet(store, key) {
+  if (store === 'meta') {
+    const meta = lsGetMeta();
+    return meta[key] !== undefined ? { key, value: meta[key] } : null;
+  }
+  return null;
+}
+
+async function dbPut(store, val) {
+  if (store === 'types') {
+    const types = lsGetTypes();
+    const idx = types.findIndex(t => parseInt(t.id) === parseInt(val.id));
+    if (idx >= 0) types[idx] = val; else types.push(val);
+    lsSetTypes(types);
+    return val.id;
+  }
+  if (store === 'records') {
+    const records = lsGetRecords();
+    const idx = records.findIndex(r => parseInt(r.id) === parseInt(val.id));
+    if (idx >= 0) records[idx] = val;
+    else {
+      const maxId = records.reduce((m, r) => Math.max(m, parseInt(r.id)||0), 0);
+      val.id = maxId + 1;
+      records.push(val);
+    }
+    lsSetRecords(records);
+    return val.id;
+  }
+  if (store === 'meta') {
+    const meta = lsGetMeta();
+    meta[val.key] = val.value;
+    lsSetMeta(meta);
+    return true;
+  }
+}
+
+async function dbDelete(store, key) {
+  if (store === 'types') {
+    const types = lsGetTypes().filter(t => parseInt(t.id) !== parseInt(key));
+    lsSetTypes(types);
+  }
+}
+
+async function dbGetByIndex(store, indexName, val) {
+  if (store === 'records') {
+    const records = lsGetRecords();
+    if (indexName === 'date') return records.filter(r => r.date === val);
+    if (indexName === 'typeId') {
+      const local = records.filter(r => parseInt(r.typeId) === parseInt(val));
+      // 1年以上前のデータはGASから取得
+      const oldData = await gasGetOldByTypeId(parseInt(val));
+      return [...oldData, ...local].sort((a,b) => a.date > b.date ? 1 : -1);
+    }
+  }
+  return [];
+}
+
+// テキスト入力モーダル
+let textInputTypeId = null;
+
+function openTextModal(typeId, title) {
+  textInputTypeId = typeId;
+  document.getElementById('textInputTitle').textContent = title;
+  const hidden = document.querySelector(`input[type="hidden"][data-typeid="${typeId}"]`);
+  document.getElementById('textInputArea').value = hidden ? hidden.value : '';
+  document.getElementById('textInputOverlay').classList.add('open');
+  setTimeout(() => document.getElementById('textInputArea').focus(), 100);
+}
+
+function saveTextModal() {
+  if (!textInputTypeId) return;
+  const val = document.getElementById('textInputArea').value;
+  const hidden = document.querySelector(`input[type="hidden"][data-typeid="${textInputTypeId}"]`);
+  const preview = document.querySelector(`.text-preview[data-typeid="${textInputTypeId}"] div`);
+  if (hidden) hidden.value = val;
+  if (preview) {
+    preview.innerHTML = val
+      ? val.replace(/</g,'&lt;').replace(/\n/g,'<br>')
+      : '<span style="color:var(--text2)">タップして入力...</span>';
+  }
+  document.getElementById('textInputOverlay').classList.remove('open');
+}
+
+document.getElementById('textInputClose').onclick = () => {
+  document.getElementById('textInputOverlay').classList.remove('open');
+};
+
+async function saveDisplist() {
+  const meta = lsGetMeta();
+  meta['displist'] = appDisplist;
+  lsSetMeta(meta);
+  // GASにも非同期バックアップ
+  gasBackupMeta().catch(e => console.warn('meta backup failed:', e));
+}
+
+// ==============================
+// GAS層（バックアップ・復元）
+// ==============================
+async function gasPost(data) {
+  const res = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify(data) });
+  return res.json();
+}
+async function gasGet(params) {
+  const res = await fetch(GAS_URL + '?' + new URLSearchParams(params));
+  return res.json();
+}
+
+// 1日分の記録をGASにバックアップ（保存時に呼ぶ）
+async function gasBackupDay(date) {
+  try {
+    const records = lsGetRecords().filter(r => r.date === date);
+    await gasPost({ action: 'backupDay', date, records });
+  } catch(e) { console.warn('GASバックアップ失敗:', e); }
+}
+
+// types・displistをGASにバックアップ
+async function gasBackupMeta() {
+  const types = lsGetTypes();
+  const meta = lsGetMeta();
+  await gasPost({ action: 'backupMeta', types, meta });
+}
+
+// 1年以上前のデータをGASから取得
+async function gasGetOldByTypeId(typeId) {
+  try {
+    const cutoff = ONE_YEAR_AGO();
+    const res = await gasGet({ action: 'getOldByTypeId', typeId, cutoff });
+    return Array.isArray(res) ? res : [];
+  } catch(e) { return []; }
+}
+
+// GASから全データを復元
+async function gasRestore() {
+  try {
+    const res = await gasGet({ action: 'restore' });
+    if (!res || res.error) return false;
+    if (res.types && res.types.length > 0) {
+      // 型を正規化
+      const types = res.types.map(t => ({
+        ...t,
+        id: parseInt(t.id),
+        dataType: parseInt(t.dataType)
+      }));
+      lsSetTypes(types);
+    }
+    if (res.records && res.records.length > 0) {
+      const cutoff = ONE_YEAR_AGO();
+      const records = res.records
+        .map(r => ({...r, date: String(r.date), typeId: parseInt(r.typeId)}))
+        .filter(r => r.date >= cutoff);
+      lsSetRecords(records);
+    }
+    if (res.meta) {
+      // displistの型を正規化
+      if (res.meta.displist && Array.isArray(res.meta.displist)) {
+        res.meta.displist = res.meta.displist.map(id => parseInt(id));
+      }
+      lsSetMeta(res.meta);
+    }
+    return true;
+  } catch(e) { console.error('gasRestore error:', e); return false; }
+}
+
+// ==============================
+// タブ切り替え
+// ==============================
+document.querySelectorAll('.tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    document.getElementById('tab-' + tab).classList.add('active');
+    currentPage = tab;
+    if (tab === 'history') renderCalendar();
+    if (tab === 'graph') renderGraphPage();
+    if (tab === 'settings') renderSettingsPage();
+  });
+});
+
+// ==============================
+// 今日ページ
+// ==============================
+document.getElementById('prevDay').onclick = () => { shiftDate(-1); };
+document.getElementById('nextDay').onclick = () => { shiftDate(1); };
+document.getElementById('goToday').onclick = () => { currentDate = todayStr(); renderTodayPage(); };
+
+function shiftDate(delta) {
+  const d = new Date(currentDate);
+  d.setDate(d.getDate() + delta);
+  currentDate = d.toISOString().slice(0,10);
+  renderTodayPage();
+}
+
+async function renderTodayPage() {
+  document.getElementById('currentDateLabel').textContent = formatDateJP(currentDate);
+  const container = document.getElementById('recordCards');
+  container.innerHTML = '<div class="loading"><div class="spinner"></div>読み込み中...</div>';
+
+  const existing = await dbGetByIndex('records','date', currentDate);
+  const existMap = {};
+  existing.forEach(r => existMap[parseInt(r.typeId)] = r);
+
+  const typesMap = {};
+  appTypes.forEach(t => typesMap[parseInt(t.id)] = t);
+
+  let html = '';
+  for (const tid of appDisplist) {
+    const t = typesMap[parseInt(tid)];
+    if (!t || t.dataType === 50) continue;
+    const rec = existMap[parseInt(tid)];
+    html += renderCard(t, rec);
+  }
+  container.innerHTML = html || '<div class="history-empty">表示項目がありません<br>設定から追加してください</div>';
+  bindCardEvents();
+}
+
+function renderCard(t, rec) {
+  const icon = getTypeIcon(t.dataType, t.iconName);
+  const unit = t.unitName || '';
+  let input = '';
+
+  if (t.dataType === 10) {
+    const on = rec && rec.value === '1';
+    input = `<div class="check-row">
+      <button class="check-toggle${on?' on':''}" data-typeid="${t.id}" data-field="check"></button>
+      <span style="font-size:14px;color:var(--text2)">${on?'✅ 達成':'⬜ 未達成'}</span>
+    </div>`;
+  } else if (t.dataType === 4 || t.dataType === 1 || t.dataType === 13 || t.dataType === 15) {
+    input = `<input type="number" inputmode="decimal" data-typeid="${t.id}" data-field="value"
+      value="${rec?.value||''}" placeholder="入力" step="0.1">`;
+  } else if (t.dataType === 2) {
+    const v1 = rec?.value || '';
+    const v2 = rec?.subValue || '';
+    input = `<div class="dual-input">
+      <input type="number" inputmode="decimal" data-typeid="${t.id}" data-field="value"
+        value="${v1}" placeholder="上" style="flex:1">
+      <span>/</span>
+      <input type="number" inputmode="decimal" data-typeid="${t.id}" data-field="subValue"
+        value="${v2}" placeholder="下" style="flex:1">
+      <span style="font-size:12px;color:var(--text2)">${unit}</span>
+    </div>`;
+  } else if (t.dataType === 12) {
+    const val = rec?.value ? parseInt(rec.value) : 0;
+    let btns = '';
+    for (let i=1;i<=5;i++) btns += `<button class="rating-btn${val===i?' selected':''}" data-typeid="${t.id}" data-field="rating" data-val="${i}">${i}</button>`;
+    input = `<div class="rating-row">${btns}</div>`;
+  } else if (t.dataType === 14) {
+    const preview = rec?.textValue ? rec.textValue.replace(/</g,'&lt;').replace(/\n/g,'<br>') : '<span style="color:var(--text2)">タップして入力...</span>';
+    input = `<div class="text-preview" data-typeid="${t.id}" onclick="openTextModal(${t.id},'${t.title.replace(/'/g,"\'")}')">
+      <div style="font-size:13px;line-height:1.6;min-height:32px;">${preview}</div>
+    </div>
+    <input type="hidden" data-typeid="${t.id}" data-field="text" value="${(rec?.textValue||'').replace(/"/g,'&quot;')}">`;
+  } else if (t.dataType === 6 || t.dataType === 7 || t.dataType === 9) {
+    input = `<input type="text" inputmode="decimal" data-typeid="${t.id}" data-field="value"
+      value="${rec?.value||''}" placeholder="例: 7:30">`;
+  } else {
+    input = `<input type="text" data-typeid="${t.id}" data-field="value"
+      value="${rec?.value||''}" placeholder="入力">`;
+  }
+
+  return `<div class="record-card">
+    <div class="record-header">
+      <span class="record-icon">${icon}</span>
+      <span class="record-title">${t.title}</span>
+      ${unit && t.dataType!==2 ? `<span class="record-unit">${unit}</span>` : ''}
+    </div>
+    ${input}
+  </div>`;
+}
+
+function bindCardEvents() {
+  document.querySelectorAll('.check-toggle').forEach(btn => {
+    btn.addEventListener('click', function() {
+      this.classList.toggle('on');
+      const on = this.classList.contains('on');
+      this.nextElementSibling.textContent = on ? '✅ 達成' : '⬜ 未達成';
+    });
+  });
+  document.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', function() {
+      const tid = this.dataset.typeid;
+      const wasSelected = this.classList.contains('selected');
+      document.querySelectorAll(`.rating-btn[data-typeid="${tid}"]`).forEach(b => b.classList.remove('selected'));
+      // 選択済みをもう一度タップでリセット
+      if (!wasSelected) this.classList.add('selected');
+    });
+  });
+}
+
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const existing = await dbGetByIndex('records','date', currentDate);
+  const existMap = {};
+  existing.forEach(r => existMap[parseInt(r.typeId)] = r);
+
+  const typesMap = {};
+  appTypes.forEach(t => typesMap[parseInt(t.id)] = t);
+
+  for (const tid of appDisplist) {
+    const t = typesMap[parseInt(tid)];
+    if (!t || t.dataType === 50) continue;
+
+    let value = null, subValue = null, textValue = null;
+
+    let shouldDelete = false;
+
+    if (t.dataType === 10) {
+      const btn = document.querySelector(`.check-toggle[data-typeid="${tid}"]`);
+      if (!btn) continue;
+      value = btn.classList.contains('on') ? '1' : '0';
+    } else if (t.dataType === 2) {
+      const v1 = document.querySelector(`input[data-typeid="${tid}"][data-field="value"]`);
+      const v2 = document.querySelector(`input[data-typeid="${tid}"][data-field="subValue"]`);
+      if (!v1) continue;
+      value = v1.value || null;
+      subValue = v2?.value || null;
+      if (!value && !subValue) shouldDelete = true;
+    } else if (t.dataType === 12) {
+      const sel = document.querySelector(`.rating-btn.selected[data-typeid="${tid}"]`);
+      if (!sel) {
+        // 未選択→既存レコードを削除
+        shouldDelete = true;
+      } else {
+        value = sel.dataset.val;
+      }
+    } else if (t.dataType === 14) {
+      const hidden = document.querySelector(`input[type="hidden"][data-typeid="${tid}"]`);
+      if (!hidden) continue;
+      textValue = hidden.value || null;
+      if (!textValue) shouldDelete = true;
+    } else {
+      const inp = document.querySelector(`input[data-typeid="${tid}"]`);
+      if (!inp) continue;
+      value = inp.value || null;
+      if (!value) shouldDelete = true;
+    }
+
+    // リセット時は既存レコードを削除
+    if (shouldDelete) {
+      if (existMap[parseInt(tid)]) {
+        const records = lsGetRecords().filter(r => parseInt(r.id) !== parseInt(existMap[parseInt(tid)].id));
+        lsSetRecords(records);
+      }
+      continue;
+    }
+
+    const rec = { typeId: parseInt(tid), date: currentDate, value, subValue, textValue };
+    if (existMap[parseInt(tid)]) rec.id = existMap[parseInt(tid)].id;
+    await dbPut('records', rec);
+  }
+
+  showToast('💾 保存しました');
+  // GASに非同期バックアップ（保存を止めない）
+  gasBackupDay(currentDate).then(() => console.log('GASバックアップ完了')).catch(()=>{});
+});
+
+// ==============================
+// 履歴ページ（カレンダー）
+// ==============================
+async function renderCalendar() {
+  const label = `${calYear}年${calMonth+1}月`;
+  document.getElementById('calMonthLabel').textContent = label;
+
+  const allRecs = lsGetRecords();
+  const datesWithData = new Set(allRecs.map(r => r.date));
+  const todayS = todayStr();
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth+1, 0).getDate();
+
+  let html = '';
+  const dayNames = ['日','月','火','水','木','金','土'];
+  dayNames.forEach(d => html += `<div class="cal-header">${d}</div>`);
+
+  for (let i=0; i<firstDay; i++) html += '<div></div>';
+  for (let d=1; d<=daysInMonth; d++) {
+    const ds = `${calYear}-${String(calMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = ds === todayS;
+    const hasData = datesWithData.has(ds);
+    html += `<div class="cal-day${isToday?' today':''}${hasData?' has-data':''}" data-date="${ds}">${d}</div>`;
+  }
+  document.getElementById('calendarGrid').innerHTML = html;
+
+  document.querySelectorAll('.cal-day[data-date]').forEach(el => {
+    el.addEventListener('click', () => showDayModal(el.dataset.date));
+  });
+
+  renderHistoryList();
+}
+
+async function renderHistoryList() {
+  const allRecs = lsGetRecords();
+  const typesMap = {};
+  appTypes.forEach(t => typesMap[parseInt(t.id)] = t);
+
+  const prefix = `${calYear}-${String(calMonth+1).padStart(2,'0')}`;
+  const filtered = allRecs.filter(r => r.date && r.date.startsWith(prefix));
+
+  const byDate = {};
+  filtered.forEach(r => {
+    if (!byDate[r.date]) byDate[r.date] = [];
+    byDate[r.date].push(r);
+  });
+
+  const dates = Object.keys(byDate).sort().reverse();
+  if (!dates.length) {
+    document.getElementById('historyList').innerHTML = '<div class="history-empty">この月の記録はありません</div>';
+    return;
+  }
+
+  let html = '';
+  dates.forEach(date => {
+    const recs = byDate[date];
+    const summary = recs.slice(0,3).map(r => {
+      const t = typesMap[parseInt(r.typeId)];
+      return t ? getTypeIcon(t.dataType, t.iconName) : '';
+    }).join(' ');
+    html += `<div class="history-item" data-date="${date}">
+      <div class="history-item-date">${formatDateJP(date)}</div>
+      <div class="history-item-content">${summary} <span style="color:var(--text2);font-size:12px">${recs.length}件の記録</span></div>
+    </div>`;
+  });
+  document.getElementById('historyList').innerHTML = html;
+  document.querySelectorAll('.history-item').forEach(el => {
+    el.addEventListener('click', () => showDayModal(el.dataset.date));
+  });
+}
+
+document.getElementById('calPrev').onclick = () => {
+  calMonth--; if (calMonth<0) { calMonth=11; calYear--; }
+  renderCalendar();
+};
+document.getElementById('calNext').onclick = () => {
+  calMonth++; if (calMonth>11) { calMonth=0; calYear++; }
+  renderCalendar();
+};
+
+let modalCurrentDate = null;
+
+async function showDayModal(date) {
+  modalCurrentDate = date;
+  const recs = lsGetRecords().filter(r => r.date === date);
+  const typesMap = {};
+  appTypes.forEach(t => typesMap[parseInt(t.id)] = t);
+
+  document.getElementById('modalDateTitle').textContent = formatDateJP(date);
+  let html = '';
+  if (!recs.length) {
+    html = '<div style="color:var(--text2);font-size:14px">この日の記録はありません</div>';
+  } else {
+    recs.forEach(r => {
+      const t = typesMap[parseInt(r.typeId)];
+      if (!t) return;
+      const icon = getTypeIcon(t.dataType, t.iconName);
+      let val = '';
+      if (t.dataType === 10) val = r.value === '1' ? '✅ 達成' : '⬜ 未達成';
+      else if (t.dataType === 2 && r.subValue) val = `${r.value||'?'} / ${r.subValue} ${t.unitName||''}`;
+      else if (t.dataType === 14) val = (r.textValue || '-').replace(/\n/g, '<br>');
+      else val = `${r.value||'-'} ${t.unitName||''}`;
+      html += `<div class="modal-record-item">
+        <div class="modal-record-name">${icon} ${t.title}</div>
+        <div class="modal-record-val">${val}</div>
+      </div>`;
+    });
+  }
+  document.getElementById('modalContent').innerHTML = html;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function shiftModalDate(delta) {
+  if (!modalCurrentDate) return;
+  const d = new Date(modalCurrentDate);
+  d.setDate(d.getDate() + delta);
+  showDayModal(d.toISOString().slice(0,10));
+}
+
+document.getElementById('modalClose').onclick = () => document.getElementById('modalOverlay').classList.remove('open');
+document.getElementById('modalOverlay').onclick = e => { if (e.target===document.getElementById('modalOverlay')) document.getElementById('modalOverlay').classList.remove('open'); };
+document.getElementById('modalPrevDay').onclick = () => shiftModalDate(-1);
+document.getElementById('modalNextDay').onclick = () => shiftModalDate(1);
+
+function setupSwipe(el, onLeft, onRight) {
+  let sx = 0, sy = 0;
+  el.addEventListener('touchstart', e => { sx = e.touches[0].clientX; sy = e.touches[0].clientY; }, {passive:true});
+  el.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - sx;
+    const dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      dx < 0 ? onLeft() : onRight();
+    }
+  }, {passive:true});
+}
+
+setupSwipe(
+  document.getElementById('modalOverlay'),
+  () => shiftModalDate(1),
+  () => shiftModalDate(-1)
+);
+setupSwipe(
+  document.getElementById('tab-today'),
+  () => shiftDate(1),
+  () => shiftDate(-1)
+);
+
+// ==============================
+// グラフページ
+// ==============================
+async function renderGraphPage() {
+  const numTypes = appTypes.filter(t => [1,2,4,6,7,9,13,15].includes(parseInt(t.dataType)));
+  const allRecs = lsGetRecords();
+  const typesWithData = new Set(allRecs.map(r => parseInt(r.typeId)));
+  const chartTypes = numTypes.filter(t => typesWithData.has(parseInt(t.id)));
+
+  if (!chartSelectedType && chartTypes.length) chartSelectedType = parseInt(chartTypes[0].id);
+
+  let btnHtml = '';
+  chartTypes.slice(0,8).forEach(t => {
+    btnHtml += `<button class="chart-selector-btn${parseInt(t.id)===chartSelectedType?' active':''}" data-tid="${t.id}">${t.title}</button>`;
+  });
+  document.getElementById('chartSelector').innerHTML = btnHtml;
+  document.querySelectorAll('.chart-selector-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      chartSelectedType = parseInt(btn.dataset.tid);
+      renderGraphPage();
+    });
+  });
+
+  if (!chartSelectedType) {
+    document.getElementById('chartEmpty').style.display = 'block';
+    return;
+  }
+
+  const typesMap = {};
+  appTypes.forEach(t => typesMap[parseInt(t.id)] = t);
+  const t = typesMap[chartSelectedType];
+  const recs = allRecs.filter(r => parseInt(r.typeId) === chartSelectedType && r.value)
+    .sort((a,b) => a.date > b.date ? 1 : -1)
+    .slice(-60);
+
+  if (!recs.length) {
+    document.getElementById('chartEmpty').style.display = 'block';
+    document.getElementById('chartCanvas').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('chartEmpty').style.display = 'none';
+  document.getElementById('chartCanvas').style.display = 'block';
+  drawChart(recs, t);
+}
+
+function drawChart(recs, t) {
+  const canvas = document.getElementById('chartCanvas');
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth || 300;
+  const H = 220;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0,0,W,H);
+
+  const pad = {top:20, right:16, bottom:36, left:44};
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+
+  const vals = recs.map(r => parseFloat(r.value)).filter(v => !isNaN(v));
+  if (!vals.length) return;
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const rangeV = maxV - minV || 1;
+
+  ctx.strokeStyle = '#e0d8d0'; ctx.lineWidth = 1;
+  for (let i=0;i<=4;i++) {
+    const y = pad.top + ch * (1 - i/4);
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left+cw, y); ctx.stroke();
+    ctx.fillStyle = '#7a6e63'; ctx.font = '10px DM Mono, monospace'; ctx.textAlign = 'right';
+    ctx.fillText((minV + rangeV * i/4).toFixed(1), pad.left-4, y+4);
+  }
+
+  ctx.strokeStyle = '#c9624f'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+  ctx.beginPath();
+  recs.forEach((r, i) => {
+    const v = parseFloat(r.value);
+    if (isNaN(v)) return;
+    const x = pad.left + cw * i / (recs.length-1||1);
+    const y = pad.top + ch * (1 - (v-minV)/rangeV);
+    i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+  });
+  ctx.stroke();
+
+  recs.forEach((r,i) => {
+    const v = parseFloat(r.value);
+    if (isNaN(v)) return;
+    const x = pad.left + cw * i / (recs.length-1||1);
+    const y = pad.top + ch * (1 - (v-minV)/rangeV);
+    ctx.beginPath(); ctx.arc(x,y,3,0,Math.PI*2);
+    ctx.fillStyle = '#c9624f'; ctx.fill();
+  });
+
+  ctx.fillStyle = '#7a6e63'; ctx.font = '10px DM Mono, monospace'; ctx.textAlign = 'center';
+  const step = Math.ceil(recs.length / 6);
+  recs.forEach((r,i) => {
+    if (i % step !== 0 && i !== recs.length-1) return;
+    const x = pad.left + cw * i / (recs.length-1||1);
+    ctx.fillText(r.date.slice(5), x, H - pad.bottom + 14);
+  });
+
+  ctx.fillStyle = '#7a6e63'; ctx.font = '11px Zen Kaku Gothic New, sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(t.unitName||'', pad.left+cw+4, pad.top+10);
+}
+
+// ==============================
+// 設定ページ
+// ==============================
+async function renderSettingsPage() {
+  appTypes = lsGetTypes().map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
+  const typesMap = {};
+  appTypes.forEach(t => typesMap[t.id] = t);
+  const dispSet = new Set(appDisplist.map(id => parseInt(id)));
+
+  let html = '';
+  appDisplist.forEach(tid => {
+    const t = typesMap[parseInt(tid)];
+    if (!t || t.dataType === 50) return;
+    const icon = getTypeIcon(t.dataType, t.iconName);
+    html += `<div class="item-row" draggable="true" data-tid="${tid}">
+      <span class="drag-handle">⠿</span>
+      <span class="record-icon">${icon}</span>
+      <span class="item-row-title">${t.title}</span>
+      <span class="item-row-type">${getTypeName(t.dataType)}</span>
+      <button style="background:none;border:none;font-size:16px;cursor:pointer;padding:4px;" data-hist="${tid}" title="履歴">📊</button>
+      <button class="item-row-del" data-del="${tid}">✕</button>
+    </div>`;
+  });
+  document.getElementById('settingsItemList').innerHTML = html || '<div style="color:var(--text2);font-size:13px;padding:8px">なし</div>';
+
+  let hiddenHtml = '';
+  appTypes.filter(t => !dispSet.has(t.id) && t.dataType !== 50).forEach(t => {
+    const icon = getTypeIcon(t.dataType, t.iconName);
+    hiddenHtml += `<div class="item-row" data-tid="${t.id}">
+      <span class="record-icon">${icon}</span>
+      <span class="item-row-title">${t.title}</span>
+      <span class="item-row-type">${getTypeName(t.dataType)}</span>
+      <button style="background:var(--green);color:white;border:none;border-radius:8px;padding:4px 10px;font-size:12px;cursor:pointer" data-add="${t.id}">追加</button>
+    </div>`;
+  });
+  document.getElementById('hiddenItemList').innerHTML = hiddenHtml || '<div style="color:var(--text2);font-size:13px;padding:8px">すべて表示中</div>';
+
+  document.querySelectorAll('[data-hist]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tid = parseInt(btn.dataset.hist);
+      const t = typesMap[tid];
+      if (t) showItemHistory(t);
+    });
+  });
+  document.querySelectorAll('[data-del]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tid = parseInt(btn.dataset.del);
+      appDisplist = appDisplist.filter(id => parseInt(id) !== tid);
+      await saveDisplist();
+      renderSettingsPage();
+    });
+  });
+  document.querySelectorAll('[data-add]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tid = parseInt(btn.dataset.add);
+      if (!appDisplist.map(id=>parseInt(id)).includes(tid)) appDisplist.push(tid);
+      await saveDisplist();
+      renderSettingsPage();
+    });
+  });
+  setupDragSort();
+}
+
+function setupDragSort() {
+  const list = document.getElementById('settingsItemList');
+  let dragging = null;
+  list.querySelectorAll('[draggable]').forEach(el => {
+    el.addEventListener('dragstart', () => { dragging = el; el.style.opacity='0.5'; });
+    el.addEventListener('dragend', () => { dragging = null; el.style.opacity='1'; });
+    el.addEventListener('dragover', e => {
+      e.preventDefault();
+      if (!dragging || dragging===el) return;
+      const rect = el.getBoundingClientRect();
+      if (e.clientY < rect.top + rect.height/2) list.insertBefore(dragging, el);
+      else el.after(dragging);
+    });
+  });
+  list.addEventListener('drop', async e => {
+    e.preventDefault();
+    const newOrder = [...list.querySelectorAll('[data-tid]')].map(el => parseInt(el.dataset.tid));
+    appDisplist = newOrder;
+    await saveDisplist();
+  });
+}
+
+document.getElementById('addItemBtn').addEventListener('click', async () => {
+  const title = document.getElementById('newItemTitle').value.trim();
+  const dataType = parseInt(document.getElementById('newItemType').value);
+  const unitName = document.getElementById('newItemUnit').value.trim() || null;
+  if (!title) { showToast('⚠️ 項目名を入力してください'); return; }
+
+  const types = lsGetTypes();
+  const maxId = types.reduce((m, t) => Math.max(m, parseInt(t.id)||0), 0);
+  const newType = { id: maxId + 1, dataType, title, unitName, iconName: 'default' };
+  types.push(newType);
+  lsSetTypes(types);
+  appTypes = types.map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
+  appDisplist.push(newType.id);
+  await saveDisplist();
+  gasBackupMeta().catch(()=>{});
+
+  document.getElementById('newItemTitle').value = '';
+  document.getElementById('newItemUnit').value = '';
+  renderSettingsPage();
+  showToast('✅ 項目を追加しました');
+});
+
+// ==============================
+// SQLiteインポート
+// ==============================
+document.getElementById('importArea').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+document.getElementById('importFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  document.getElementById('importStatus').textContent = '⏳ ファイルを読み込み中...';
+
+  try {
+    const buffer = await file.arrayBuffer();
+    const data = await parseSQLiteFile(buffer);
+    await importData(data);
+    document.getElementById('importStatus').textContent = `✅ インポート完了 (${data.records.length}件)`;
+    showToast('✅ データをインポートしました');
+    appTypes = lsGetTypes().map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
+    const meta = lsGetMeta();
+    if (meta.displist) appDisplist = meta.displist.map(id => parseInt(id));
+    renderTodayPage();
+    renderSettingsPage();
+  } catch(err) {
+    document.getElementById('importStatus').textContent = '❌ インポート失敗: ' + err.message;
+    console.error(err);
+  }
+});
+
+async function importData(data) {
+  // LocalStorageに保存（直近1年分のrecordsのみ）
+  const cutoff = ONE_YEAR_AGO();
+  document.getElementById('importStatus').textContent = '⏳ ローカルに保存中...';
+  lsSetTypes(data.types);
+  lsSetRecords(data.records.filter(r => r.date >= cutoff));
+  const meta = lsGetMeta();
+  meta.displist = data.displist.map(id => parseInt(id));
+  lsSetMeta(meta);
+  appDisplist = meta.displist;
+
+  // GASに全件バックアップ（非同期・バックグラウンド）
+  document.getElementById('importStatus').textContent = '⏳ GASにバックアップ中（バックグラウンド）...';
+  gasFullBackup(data).catch(e => console.warn('GASバックアップ失敗:', e));
+}
+
+async function gasFullBackup(data) {
+  const BATCH = 300;
+  await gasPost({ action: 'clearAndPutBatch', store: 'types', values: data.types });
+  for (let i = 0; i < data.records.length; i += BATCH) {
+    await gasPost({
+      action: i === 0 ? 'clearAndPutBatch' : 'putBatch',
+      store: 'records',
+      values: data.records.slice(i, i + BATCH)
+    });
+  }
+  await gasPost({ action: 'backupMeta', types: data.types, meta: { displist: data.displist } });
+  console.log('GASフルバックアップ完了');
+}
+
+// ==============================
+// トースト
+// ==============================
+let toastTimer;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+// ==============================
+// 項目別履歴
+// ==============================
+let itemHistoryType = null;
+let itemHistoryCalYear, itemHistoryCalMonth;
+
+async function showItemHistory(t) {
+  itemHistoryType = t;
+  const now = new Date();
+  itemHistoryCalYear = now.getFullYear();
+  itemHistoryCalMonth = now.getMonth();
+  document.getElementById('itemHistoryTitle').textContent = getTypeIcon(t.dataType, t.iconName) + ' ' + t.title;
+  document.getElementById('itemHistoryOverlay').classList.add('open');
+  const defaultMode = (t.dataType === 14) ? 'list' : 'calendar';
+  setItemHistoryMode(defaultMode);
+}
+
+function setItemHistoryMode(mode) {
+  document.querySelectorAll('#itemHistoryModeTabs .chart-selector-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(mode === 'calendar' ? 'modeCalBtn' : 'modeListBtn').classList.add('active');
+  document.getElementById('itemHistoryCalendar').style.display = mode === 'calendar' ? 'block' : 'none';
+  document.getElementById('itemHistoryList').style.display = mode === 'list' ? 'block' : 'none';
+  if (mode === 'calendar') renderItemHistoryCalendar();
+  else renderItemHistoryList();
+}
+
+async function renderItemHistoryCalendar() {
+  const t = itemHistoryType;
+  const allRecs = lsGetRecords().filter(r => parseInt(r.typeId) === parseInt(t.id));
+  const recMap = {};
+  allRecs.forEach(r => { recMap[r.date] = r; });
+
+  const label = `${itemHistoryCalYear}年${itemHistoryCalMonth+1}月`;
+  const firstDay = new Date(itemHistoryCalYear, itemHistoryCalMonth, 1).getDay();
+  const daysInMonth = new Date(itemHistoryCalYear, itemHistoryCalMonth+1, 0).getDate();
+  const todayS = todayStr();
+  const isCheck = t.dataType === 10;
+  const isRating = t.dataType === 12;
+  const isNum = [1,2,4,13,15].includes(parseInt(t.dataType));
+
+  let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <button onclick="itemHistoryCalShift(-1)" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text2);">&#8249;</button>
+    <div style="font-weight:700;font-size:14px;">${label}</div>
+    <button onclick="itemHistoryCalShift(1)" style="background:none;border:none;font-size:22px;cursor:pointer;color:var(--text2);">&#8250;</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:3px;">`;
+
+  ['日','月','火','水','木','金','土'].forEach(d => {
+    html += `<div style="text-align:center;font-size:10px;color:var(--text2);padding:3px 0;font-weight:700;">${d}</div>`;
+  });
+  for (let i=0; i<firstDay; i++) html += '<div></div>';
+
+  for (let d=1; d<=daysInMonth; d++) {
+    const ds = `${itemHistoryCalYear}-${String(itemHistoryCalMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const rec = recMap[ds];
+    const isToday = ds === todayS;
+    let bg = 'var(--border)', color = 'var(--text2)', label2 = '';
+
+    if (rec) {
+      if (isCheck) {
+        bg = rec.value === '1' ? 'var(--green)' : '#e8d0d0';
+        color = rec.value === '1' ? 'white' : 'var(--accent)';
+      } else if (isRating) {
+        const v = parseInt(rec.value) || 0;
+        bg = `hsl(130,${30+v*12}%,${55-v*3}%)`;
+        color = 'white'; label2 = v;
+      } else if (isNum) {
+        bg = 'var(--blue)'; color = 'white';
+        label2 = rec.value ? parseFloat(rec.value).toFixed(1) : '';
+      } else {
+        bg = 'var(--yellow)'; color = 'white';
+      }
+    }
+    if (isToday) { bg = 'var(--accent)'; color = 'white'; }
+
+    html += `<div style="text-align:center;padding:5px 2px;border-radius:8px;background:${bg};color:${color};font-size:12px;font-weight:700;line-height:1.3;">
+      ${d}${label2 ? `<div style="font-size:9px;opacity:0.9;">${label2}</div>` : ''}
+    </div>`;
+  }
+  html += '</div>';
+
+  if (isCheck) {
+    html += `<div style="display:flex;gap:12px;margin-top:12px;font-size:12px;color:var(--text2);">
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--green);vertical-align:middle;margin-right:4px;"></span>達成</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:#e8d0d0;vertical-align:middle;margin-right:4px;"></span>未達成</span>
+      <span><span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:var(--border);vertical-align:middle;margin-right:4px;"></span>未記録</span>
+    </div>`;
+  }
+  document.getElementById('itemHistoryCalendar').innerHTML = html;
+}
+
+function itemHistoryCalShift(delta) {
+  itemHistoryCalMonth += delta;
+  if (itemHistoryCalMonth < 0) { itemHistoryCalMonth = 11; itemHistoryCalYear--; }
+  if (itemHistoryCalMonth > 11) { itemHistoryCalMonth = 0; itemHistoryCalYear++; }
+  renderItemHistoryCalendar();
+}
+
+async function renderItemHistoryList() {
+  const t = itemHistoryType;
+  const allRecs = lsGetRecords().filter(r => parseInt(r.typeId) === parseInt(t.id));
+  allRecs.sort((a,b) => b.date > a.date ? 1 : -1);
+
+  if (!allRecs.length) {
+    document.getElementById('itemHistoryList').innerHTML = '<div class="history-empty">記録がありません</div>';
+    return;
+  }
+
+  let html = '';
+  allRecs.forEach(r => {
+    let val = '';
+    if (t.dataType === 10) val = r.value === '1' ? '<span style="color:var(--green);font-weight:700;">✅ 達成</span>' : '<span style="color:var(--text2);">⬜ 未達成</span>';
+    else if (t.dataType === 14) val = `<div style="white-space:pre-wrap;line-height:1.6;">${(r.textValue||'').replace(/</g,'&lt;')}</div>`;
+    else if (t.dataType === 12) val = '⭐'.repeat(parseInt(r.value)||0);
+    else if (t.dataType === 2) val = `${r.value||'?'} / ${r.subValue||'?'} ${t.unitName||''}`;
+    else val = `${r.value||'-'} ${t.unitName||''}`;
+
+    html += `<div style="padding:10px 0;border-bottom:1px solid var(--border);">
+      <div style="font-size:11px;color:var(--text2);font-family:'DM Mono',monospace;margin-bottom:4px;">${formatDateJP(r.date)}</div>
+      <div style="font-size:14px;">${val}</div>
+    </div>`;
+  });
+  document.getElementById('itemHistoryList').innerHTML = html;
+}
+
+document.getElementById('itemHistoryClose').onclick = () => document.getElementById('itemHistoryOverlay').classList.remove('open');
+document.getElementById('itemHistoryOverlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('itemHistoryOverlay')) document.getElementById('itemHistoryOverlay').classList.remove('open');
+});
+document.getElementById('modeCalBtn').onclick = () => setItemHistoryMode('calendar');
+document.getElementById('modeListBtn').onclick = () => setItemHistoryMode('list');
+
+// ==============================
+// ユーティリティ
+// ==============================
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function formatDateJP(str) {
+  if (!str) return '';
+  const [y,m,d] = str.split('-');
+  return `${y}年${parseInt(m)}月${parseInt(d)}日`;
+}
+function getTypeIcon(dataType, iconName) {
+  const icons = {
+    'weight':'⚖️','thermometer':'🌡️','blood_pressure':'💉','moon':'🌙','toilet':'🚽',
+    'checkbox':'✅','situp':'🏋️','f_n':'🍽️','cart':'🛒','pet':'🐾','fire':'🔥',
+    'measure':'📏','hart':'❤️','f_n_s':'🥗','dumbbell':'💪','nabe':'🍲','meter':'⏰',
+    'cake':'🍰','diamond':'💎','file_02':'📄','wallet':'👛','checkbox2':'☑️','baby':'👶',
+    'pill':'💊','water':'💧','shoes_02':'👟','radon':'🛁','teacup':'☕','burger':'🍔',
+    'bicycle':'🚲','stairs':'🪜','shoes':'👟','swim':'🏊','pushup':'💪','book':'📚',
+    'don':'🥣','note':'📒','mixer':'🥤','lip':'💋','carrot':'🥕','guruguru':'🌀',
+    'fallingstar':'⭐','tshirt':'👕','graph_viewer':'📊','default':'📌'
+  };
+  return icons[iconName] || '📌';
+}
+function getTypeName(dataType) {
+  const n = {1:'数値',2:'上下値',4:'数値',6:'時間',7:'時間',9:'時間',10:'チェック',12:'評価',13:'カウンター',14:'メモ',15:'金額',50:'特殊'};
+  return n[parseInt(dataType)] || '不明';
+}
+
+// ==============================
+// SQLiteパーサー
+// ==============================
+async function parseSQLiteFile(buffer) {
+  return new Promise(async (resolve, reject) => {
+    try {
+      const script = document.createElement('script');
+      script.src = 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js';
+      script.onload = async () => {
+        try {
+          const SQL = await initSqlJs({ locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}` });
+          const db = new SQL.Database(new Uint8Array(buffer));
+          const types = [], records = [], displist = [];
+          let r = db.exec("SELECT id,dataType,title,unitName,iconName FROM types");
+          if (r.length) r[0].values.forEach(v => types.push({id:v[0],dataType:v[1],title:v[2],unitName:v[3],iconName:v[4]}));
+          r = db.exec("SELECT id,typeId,date,value,subValue,textValue FROM records");
+          if (r.length) r[0].values.forEach(v => records.push({id:v[0],typeId:v[1],date:v[2],value:v[3],subValue:v[4],textValue:v[5]}));
+          r = db.exec("SELECT typeId FROM displist ORDER BY id");
+          if (r.length) r[0].values.forEach(v => displist.push(v[0]));
+          db.close();
+          resolve({types, records, displist});
+        } catch(e) { reject(e); }
+      };
+      script.onerror = () => reject(new Error('sql.js読み込み失敗'));
+      document.head.appendChild(script);
+    } catch(e) { reject(e); }
+  });
+}
+
+// ==============================
+// アプリ状態
+// ==============================
+let appTypes = [];
+let appDisplist = [];
+let currentDate = todayStr();
+let currentPage = 'today';
+let calYear, calMonth;
+let chartSelectedType = null;
+
+// ==============================
+// 初期化
+// ==============================
+async function init() {
+  document.getElementById('recordCards').innerHTML = '<div class="loading"><div class="spinner"></div>データ読み込み中...</div>';
+
+  // LocalStorageからロード
+  appTypes = lsGetTypes().map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
+  const meta = lsGetMeta();
+
+  // LocalStorageが空の場合はGASから復元
+  if (appTypes.length === 0) {
+    document.getElementById('recordCards').innerHTML = '<div class="loading"><div class="spinner"></div>GASからデータを復元中...</div>';
+    const ok = await gasRestore();
+    if (ok) {
+      appTypes = lsGetTypes().map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
+      const restoredMeta = lsGetMeta();
+      appDisplist = restoredMeta.displist ? restoredMeta.displist.map(id => parseInt(id)) : [];
+      showToast('✅ GASからデータを復元しました');
+    }
+  } else {
+    appDisplist = meta.displist ? meta.displist.map(id => parseInt(id)) : [];
+    // LocalStorageのrecordsの型も正規化
+    const recs = lsGetRecords().map(r => ({...r, date: String(r.date), typeId: parseInt(r.typeId)}));
+    lsSetRecords(recs);
+  }
+
+  const today = new Date();
+  calYear = today.getFullYear();
+  calMonth = today.getMonth();
+
+  updateHeaderDate();
+  await renderTodayPage();
+  renderSettingsPage();
+}
+
+function updateHeaderDate() {
+  const d = new Date();
+  document.getElementById('headerDate').textContent =
+    `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
+}
+
+// ==============================
+// 起動
+// ==============================
+init();
+</script>
+</body>
+</html>
