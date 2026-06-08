@@ -222,7 +222,7 @@ def load_asken_credentials() -> dict | None:
         .document("credentials")
         .get()
     )
-    if snap.exists():
+    if snap.exists:
         data = snap.to_dict() or {}
         if data.get("email") and data.get("password"):
             return {"email": data["email"], "password": data["password"]}
@@ -540,8 +540,11 @@ def run_sync(args: argparse.Namespace) -> int:
             print(f"認証エラー: {exc}")
             return 1
         except Exception as exc:
+            import traceback
+            tb = traceback.format_exc()
             push_status(ok=False, error="sync_failed", message=str(exc))
             print(f"取得失敗: {exc}")
+            print(tb)
             return 1
         finally:
             if browser and not args.connect:
