@@ -42,21 +42,15 @@ GitHub Actions（毎日 22:00 JST）
 
 ### 4. あすけん Cookie の登録（初回・月1回程度）
 
-**方法A: PC リズムケアから（推奨）**
+**かんたん（推奨）:** `asken-sync\refresh-cookies.bat` をダブルクリック
 
-1. PC ブラウザでリズムケアを開き、設定 →「① あすけんにログイン」
-2. 新しいタブで Google ログイン
-3. Chrome 拡張 [Cookie-Editor](https://chromewebstore.google.com/detail/cookie-editor/hlkenndednhfkekjlnbldkphdfkgfnpi) で `asken.jp` の Cookie を JSON エクスポート
-4. リズムケア設定に貼り付け →「③ Cookieを保存」
+1. Chrome が開く → あすけんに Google ログイン
+2. 黒い画面に戻って Enter
+3. 完了
 
-**方法B: ローカルスクリプト**
+PC のリズムケア設定画面にも同じ手順が表示されます。
 
-```powershell
-cd asken-sync
-.\start-chrome.ps1
-# Chrome であすけんにログイン後:
-python sync_day.py --connect --upload-cookies
-```
+事前に `firebase_config.json` と `serviceAccountKey.json` を `asken-sync` フォルダに置いてください。
 
 ### 5. 動作確認
 
@@ -67,7 +61,7 @@ GitHub → Actions → **Asuken Sync** → **Run workflow**
 ## Cookie 期限切れ時
 
 - スマホ: 画面上部に警告バナーが表示されます
-- PC リズムケア: 設定タブから Cookie を再保存
+- PC: リズムケア設定の手順に従い、`refresh-cookies.bat` をダブルクリック
 - 翌日 22:00 の自動同期、または Actions の手動実行で復旧します
 
 ## ローカル開発用

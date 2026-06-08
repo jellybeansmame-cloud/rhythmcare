@@ -272,6 +272,21 @@
   }
   .asken-sync-banner:hover { background: #ffe9d6; }
 
+  .asken-copy-btn {
+    display: inline-block;
+    margin-left: 6px;
+    margin-top: 4px;
+    padding: 4px 10px;
+    font-size: 11px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+  }
+  .asken-copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+
   /* モーダル */
   .modal-overlay {
     display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
@@ -411,18 +426,47 @@
         毎日22:00頃にクラウドから自動取得し、スマホを開くと反映されます。
       </p>
       <div id="askenCookieRefreshSection" style="margin-bottom:14px;padding:12px;border:1.5px solid var(--border);border-radius:12px;background:var(--surface2);">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">ログイン更新（PC向け）</div>
-        <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
-          あすけんの Cookie はセキュリティ上、リズムケアから直接取得できません。PC であすけんにログインしたあと、Cookie を貼り付けて保存してください。
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">ログイン更新（PC向け・かんたん）</div>
+        <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
+          ブラウザのセキュリティ上、リズムケアから直接 Cookie は取れません。下の<strong>更新ツール</strong>をダブルクリックするだけで更新できます（初回設定済みならコマンド不要）。
         </p>
-        <button type="button" id="askenOpenLoginBtn" class="add-btn" style="width:100%;margin-bottom:10px;">① あすけんにログイン（新しいタブ）</button>
-        <p style="font-size:11px;color:var(--text2);line-height:1.6;margin-bottom:8px;">
-          ② Chrome 拡張「Cookie-Editor」等で <code>asken.jp</code> の Cookie を JSON エクスポート<br>
-          または PC で <code>python sync_day.py --connect --upload-cookies</code> を実行
-        </p>
-        <textarea id="askenCookiePaste" placeholder='[{"name":"PSID_0","value":"...","domain":"www.asken.jp",...}]'
-          style="width:100%;min-height:72px;border:1.5px solid var(--border);border-radius:10px;padding:10px;font-size:11px;font-family:'DM Mono',monospace;background:var(--surface);color:var(--text);resize:vertical;margin-bottom:8px;"></textarea>
-        <button type="button" id="askenCookieSaveBtn" class="save-btn" style="margin-top:0;">③ Cookieを保存</button>
+        <div id="askenCookieWizard" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:700;margin-bottom:10px;color:var(--accent);">📋 手順（3ステップ）</div>
+          <div style="font-size:12px;line-height:1.7;margin-bottom:8px;">
+            <strong>①</strong> エクスプローラーで次のファイルを開く<br>
+            <code id="askenRefreshBatPath" style="font-size:11px;word-break:break-all;">C:\gas-local\rhythmcare\asken-sync\refresh-cookies.bat</code>
+            <button type="button" class="asken-copy-btn" data-copy-target="askenRefreshBatPath">パスをコピー</button>
+          </div>
+          <div style="font-size:12px;line-height:1.7;margin-bottom:8px;">
+            <strong>②</strong> <code>refresh-cookies.bat</code> を<strong>ダブルクリック</strong><br>
+            <span style="color:var(--text2);">→ Chrome が開く → あすけんにログイン → 黒い画面で Enter</span>
+          </div>
+          <div style="font-size:12px;line-height:1.7;margin-bottom:10px;">
+            <strong>③</strong> この画面を更新（F5）して、警告が消えたか確認
+          </div>
+          <button type="button" id="askenOpenFolderHelpBtn" class="add-btn" style="width:100%;margin-bottom:8px;">① のやり方（フォルダの開き方）</button>
+          <div id="askenOpenFolderHelp" style="display:none;font-size:11px;color:var(--text2);line-height:1.6;padding:10px;background:var(--surface2);border-radius:8px;margin-bottom:8px;">
+            1. キーボードの <code>Win + R</code> を押す<br>
+            2. 下をコピーして貼り付け → OK<br>
+            <code id="askenFolderPath" style="word-break:break-all;">C:\gas-local\rhythmcare\asken-sync</code>
+            <button type="button" class="asken-copy-btn" data-copy-target="askenFolderPath">コピー</button><br>
+            3. 開いたフォルダで <code>refresh-cookies.bat</code> をダブルクリック
+          </div>
+        </div>
+        <details style="font-size:12px;color:var(--text2);">
+          <summary style="cursor:pointer;font-weight:700;color:var(--text);margin-bottom:8px;">上級者向け：コマンドを手動実行する場合</summary>
+          <div style="padding:8px 0;line-height:1.8;">
+            <div>フォルダ移動:</div>
+            <code id="askenCmdCd" style="display:block;font-size:11px;padding:6px;background:var(--surface);border-radius:6px;margin:4px 0;">cd C:\gas-local\rhythmcare\asken-sync</code>
+            <button type="button" class="asken-copy-btn" data-copy-target="askenCmdCd">コピー</button>
+            <div style="margin-top:8px;">Chrome 起動:</div>
+            <code id="askenCmdChrome" style="display:block;font-size:11px;padding:6px;background:var(--surface);border-radius:6px;margin:4px 0;">.\start-chrome.ps1</code>
+            <button type="button" class="asken-copy-btn" data-copy-target="askenCmdChrome">コピー</button>
+            <div style="margin-top:8px;">Cookie 送信（ログイン後）:</div>
+            <code id="askenCmdUpload" style="display:block;font-size:11px;padding:6px;background:var(--surface);border-radius:6px;margin:4px 0;">python sync_day.py --connect --upload-cookies</code>
+            <button type="button" class="asken-copy-btn" data-copy-target="askenCmdUpload">コピー</button>
+          </div>
+        </details>
       </div>
       <div class="settings-title" style="margin-bottom:8px;font-size:12px;">手動インポート（1日分）</div>
       <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
@@ -1385,6 +1429,7 @@ async function renderSettingsPage() {
   });
   setupDragSort();
   renderAskenMapUI();
+  updateAskenPathUI();
   renderAskenSyncStatusPanel();
 }
 
@@ -1730,6 +1775,36 @@ function renderAskenSyncStatusPanel() {
   if (section) {
     const showCookieUi = needsAskenAttention() || !window.matchMedia('(max-width: 768px)').matches;
     section.style.display = showCookieUi ? 'block' : 'none';
+    section.style.borderColor = needsAskenAttention() ? '#e8957f' : 'var(--border)';
+    section.style.background = needsAskenAttention() ? '#fff8f5' : 'var(--surface2)';
+  }
+}
+
+const ASKEN_SYNC_FOLDER = 'C:\\gas-local\\rhythmcare\\asken-sync';
+
+function updateAskenPathUI() {
+  const folder = ASKEN_SYNC_FOLDER;
+  const bat = folder + '\\refresh-cookies.bat';
+  const setPath = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  setPath('askenRefreshBatPath', bat);
+  setPath('askenFolderPath', folder);
+  setPath('askenCmdCd', 'cd ' + folder);
+  setPath('askenCmdChrome', '.\\start-chrome.ps1');
+  setPath('askenCmdUpload', 'python sync_day.py --connect --upload-cookies');
+}
+
+async function copyAskenText(elementId, label) {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  const text = el.textContent.trim();
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast('✅ ' + (label || 'コピーしました'));
+  } catch {
+    showToast('⚠️ コピーできませんでした。手動で選択してください');
   }
 }
 
@@ -1743,43 +1818,6 @@ async function refreshAskenSyncStatus() {
   } catch (e) {
     console.warn('あすけん同期ステータスの取得失敗:', e);
   }
-}
-
-function parseAskenCookieUpload(raw) {
-  const data = JSON.parse(raw);
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data.cookies)) return data.cookies;
-  throw new Error('Cookie JSONの形式が正しくありません');
-}
-
-async function uploadAskenCookiesFromUI() {
-  const text = document.getElementById('askenCookiePaste').value.trim();
-  if (!text) throw new Error('Cookie JSONを貼り付けてください');
-  const cookies = parseAskenCookieUpload(text).map(c => {
-    const item = {
-      name: c.name,
-      value: c.value,
-      domain: c.domain || '.asken.jp',
-      path: c.path || '/',
-    };
-    if (c.expires !== undefined) item.expires = c.expires;
-    if (c.httpOnly !== undefined) item.httpOnly = c.httpOnly;
-    if (c.secure !== undefined) item.secure = c.secure;
-    if (c.sameSite) item.sameSite = c.sameSite;
-    return item;
-  });
-  await setDoc(userDoc('asken_config/cookies'), {
-    cookies,
-    updatedAtMs: Date.now(),
-  });
-  await setDoc(userDoc('asken_config/status'), {
-    ok: null,
-    error: null,
-    message: 'Cookieを更新しました。次回の自動同期（22:00頃）をお待ちください。',
-    cookiesUpdatedAt: Date.now(),
-  }, { merge: true });
-  document.getElementById('askenCookiePaste').value = '';
-  await refreshAskenSyncStatus();
 }
 
 async function cleanupOrphanRecords() {
@@ -1860,20 +1898,15 @@ document.getElementById('cleanupOrphanBtn').addEventListener('click', () => {
   cleanupOrphanRecords();
 });
 
-document.getElementById('askenOpenLoginBtn').addEventListener('click', () => {
-  window.open('https://www.asken.jp/login', '_blank', 'noopener');
+document.getElementById('askenOpenFolderHelpBtn').addEventListener('click', () => {
+  const el = document.getElementById('askenOpenFolderHelp');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 });
 
-document.getElementById('askenCookieSaveBtn').addEventListener('click', async () => {
-  document.getElementById('importStatus').textContent = '⏳ Cookieを保存中...';
-  try {
-    await uploadAskenCookiesFromUI();
-    document.getElementById('importStatus').textContent = '✅ Cookieを保存しました';
-    showToast('✅ Cookieを保存しました');
-  } catch (err) {
-    document.getElementById('importStatus').textContent = '❌ 保存失敗: ' + err.message;
-    console.error(err);
-  }
+document.querySelectorAll('.asken-copy-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    copyAskenText(btn.dataset.copyTarget, 'コピーしました');
+  });
 });
 
 document.getElementById('askenSyncBanner').addEventListener('click', () => {
