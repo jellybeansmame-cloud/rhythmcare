@@ -197,6 +197,22 @@
 
   /* 設定ページ */
   .settings-section { margin-bottom: 24px; }
+  .settings-tabs {
+    display: flex; gap: 6px; margin-bottom: 16px;
+    background: var(--surface); border-radius: var(--radius-sm);
+    padding: 4px; border: 1px solid var(--border);
+  }
+  .settings-tab {
+    flex: 1; padding: 10px 8px; border: none; border-radius: 8px;
+    background: none; font-size: 13px; font-weight: 700; cursor: pointer;
+    color: var(--text2); font-family: 'Zen Kaku Gothic New', sans-serif;
+    transition: all 0.15s;
+  }
+  .settings-tab.active {
+    background: var(--accent); color: white;
+  }
+  .settings-panel { display: none; }
+  .settings-panel.active { display: block; }
   .settings-title {
     font-size: 13px; font-weight: 700; color: var(--text2); letter-spacing: 0.08em;
     text-transform: uppercase; margin-bottom: 10px; padding-left: 4px;
@@ -413,6 +429,40 @@
 
 <!-- 設定ページ -->
 <div class="page" id="tab-settings">
+  <div class="settings-tabs">
+    <button type="button" class="settings-tab active" data-stab="items">表示項目</button>
+    <button type="button" class="settings-tab" data-stab="data">データ・同期</button>
+  </div>
+
+  <div id="settings-panel-items" class="settings-panel active">
+  <div class="settings-section">
+    <div class="settings-title">表示項目を追加</div>
+    <div class="add-form">
+      <input type="text" id="newItemTitle" placeholder="項目名（例：水を飲む）">
+      <select id="newItemType">
+        <option value="10">チェック（達成/未達成）</option>
+        <option value="4">数値入力</option>
+        <option value="12">評価（1〜5）</option>
+        <option value="14">テキストメモ</option>
+        <option value="2">2値入力（上/下 など）</option>
+      </select>
+      <input type="text" id="newItemUnit" placeholder="単位（例：kg、回、ml）任意">
+      <button class="add-btn" id="addItemBtn">＋ 追加</button>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title">表示項目一覧（ドラッグで並べ替え）</div>
+    <div id="settingsItemList"></div>
+  </div>
+
+  <div class="settings-section">
+    <div class="settings-title">非表示の項目から追加</div>
+    <div id="hiddenItemList"></div>
+  </div>
+  </div>
+
+  <div id="settings-panel-data" class="settings-panel">
   <div class="settings-section">
     <div class="settings-title">データインポート</div>
     <div class="import-area" id="importArea">
@@ -423,7 +473,7 @@
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
       <div class="settings-title" style="margin-bottom:8px;">あすけん自動同期</div>
       <p id="askenSyncStatusText" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
-        毎日22:00頃にクラウドから自動取得し、スマホを開くと反映されます。
+        毎日24:00頃にクラウドから自動取得し、スマホを開くと反映されます。
       </p>
       <div id="askenCredentialsSection" style="margin-bottom:14px;padding:12px;border:1.5px solid var(--green);border-radius:12px;background:var(--surface2);">
         <div style="font-size:13px;font-weight:700;margin-bottom:8px;">あすけんログイン（自動同期用・推奨）</div>
@@ -516,33 +566,6 @@
     </div>
     <div id="importStatus" style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:16px;margin-top:12px;"></div>
   </div>
-
-
-
-  <div class="settings-section">
-    <div class="settings-title">表示項目を追加</div>
-    <div class="add-form">
-      <input type="text" id="newItemTitle" placeholder="項目名（例：水を飲む）">
-      <select id="newItemType">
-        <option value="10">チェック（達成/未達成）</option>
-        <option value="4">数値入力</option>
-        <option value="12">評価（1〜5）</option>
-        <option value="14">テキストメモ</option>
-        <option value="2">2値入力（上/下 など）</option>
-      </select>
-      <input type="text" id="newItemUnit" placeholder="単位（例：kg、回、ml）任意">
-      <button class="add-btn" id="addItemBtn">＋ 追加</button>
-    </div>
-  </div>
-
-  <div class="settings-section">
-    <div class="settings-title">表示項目一覧（ドラッグで並べ替え）</div>
-    <div id="settingsItemList"></div>
-  </div>
-
-  <div class="settings-section">
-    <div class="settings-title">非表示の項目から追加</div>
-    <div id="hiddenItemList"></div>
   </div>
 </div>
 
@@ -873,6 +896,35 @@ async function firestoreFullBackup(data) {
     if (statusEl) statusEl.textContent = '✅ バックアップ完了';
   } catch(e) { console.warn('フルバックアップ失敗:', e); }
 }
+
+// ==============================
+// 設定サブタブ
+// ==============================
+let settingsSubTab = 'items';
+
+function switchSettingsTab(stab) {
+  settingsSubTab = stab;
+  document.querySelectorAll('.settings-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.stab === stab);
+  });
+  document.querySelectorAll('.settings-panel').forEach(panel => {
+    panel.classList.remove('active');
+  });
+  const panel = document.getElementById('settings-panel-' + stab);
+  if (panel) panel.classList.add('active');
+}
+
+document.querySelectorAll('.settings-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    switchSettingsTab(btn.dataset.stab);
+    if (btn.dataset.stab === 'items') renderSettingsPage();
+    if (btn.dataset.stab === 'data') {
+      renderAskenMapUI();
+      loadAskenCredentialsUI();
+      renderAskenSyncStatusPanel();
+    }
+  });
+});
 
 // ==============================
 // タブ切り替え
@@ -1770,7 +1822,7 @@ function renderAskenSyncStatusPanel() {
   const el = document.getElementById('askenSyncStatusText');
   if (!el) return;
   if (!askenSyncStatus) {
-    el.textContent = '毎日22:00頃にクラウドから自動取得します（初回はCookie設定が必要です）';
+    el.textContent = '毎日24:00頃にクラウドから自動取得します（初回はログイン設定が必要です）';
     return;
   }
   const parts = [];
@@ -1981,6 +2033,10 @@ document.querySelectorAll('.asken-copy-btn').forEach(btn => {
 document.getElementById('askenSyncBanner').addEventListener('click', () => {
   const btn = document.querySelector('.tab[data-tab="settings"]');
   if (btn) btn.click();
+  switchSettingsTab('data');
+  renderAskenMapUI();
+  loadAskenCredentialsUI();
+  renderAskenSyncStatusPanel();
 });
 document.getElementById('askenSyncBanner').addEventListener('keydown', e => {
   if (e.key === 'Enter' || e.key === ' ') {
