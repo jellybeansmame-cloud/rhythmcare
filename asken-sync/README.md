@@ -39,18 +39,18 @@ GitHub Actions（毎日 22:00 JST）
 |--------|------|
 | `FIREBASE_UID` | リズムケア設定に表示されるユーザーID |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | サービスアカウント JSON の**全文**（1行で貼り付け） |
+| `ASKEN_EMAIL` | あすけんのログインメールアドレス |
+| `ASKEN_PASSWORD` | あすけんのパスワード |
 
-### 4. あすけん Cookie の登録（初回・月1回程度）
+### 4. あすけんログイン情報の登録（初回）
 
-**かんたん（推奨）:** `asken-sync\refresh-cookies.bat` をダブルクリック
+**推奨: メールアドレス + パスワード**
 
-1. Chrome が開く → あすけんに Google ログイン
-2. 黒い画面に戻って Enter
-3. 完了
+1. PC のリズムケア → 設定 →「あすけんログイン（自動同期用）」に入力
+2. 「ログイン情報を保存」
+3. 同じ値を GitHub Secrets の `ASKEN_EMAIL` / `ASKEN_PASSWORD` にも登録
 
-PC のリズムケア設定画面にも同じ手順が表示されます。
-
-事前に `firebase_config.json` と `serviceAccountKey.json` を `asken-sync` フォルダに置いてください。
+Google ログインのみの場合は `refresh-cookies.bat` を使います（予備）。
 
 ### 5. 動作確認
 
@@ -58,11 +58,11 @@ GitHub → Actions → **Asuken Sync** → **Run workflow**
 
 成功後、スマホでリズムケアを開くと自動で反映されます。
 
-## Cookie 期限切れ時
+## ログインエラー時
 
-- スマホ: 画面上部に警告バナーが表示されます
-- PC: リズムケア設定の手順に従い、`refresh-cookies.bat` をダブルクリック
-- 翌日 22:00 の自動同期、または Actions の手動実行で復旧します
+- メール/パスワード方式: リズムケア設定でパスワードを確認・再保存
+- Google ログイン方式: `refresh-cookies.bat` をダブルクリック
+- Actions を手動実行して確認
 
 ## ローカル開発用
 

@@ -29,6 +29,8 @@ jobs:
         env:
           FIREBASE_UID: ${{ secrets.FIREBASE_UID }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          ASKEN_EMAIL: ${{ secrets.ASKEN_EMAIL }}
+          ASKEN_PASSWORD: ${{ secrets.ASKEN_PASSWORD }}
         run: |
           DATE=$(python -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Asia/Tokyo')).strftime('%Y-%m-%d'))")
           python asken-sync/sync_day.py --push --date "$DATE"

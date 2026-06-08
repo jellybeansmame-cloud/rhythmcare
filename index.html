@@ -425,10 +425,26 @@
       <p id="askenSyncStatusText" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
         毎日22:00頃にクラウドから自動取得し、スマホを開くと反映されます。
       </p>
+      <div id="askenCredentialsSection" style="margin-bottom:14px;padding:12px;border:1.5px solid var(--green);border-radius:12px;background:var(--surface2);">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">あすけんログイン（自動同期用・推奨）</div>
+        <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
+          あすけんの<strong>メールアドレスとパスワード</strong>を保存すると、クラウドが毎回自動ログインします（Googleログインより安定）。
+        </p>
+        <label style="font-size:13px;display:block;margin-bottom:8px;">メールアドレス
+          <input type="email" id="askenLoginEmail" autocomplete="username"
+            style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);">
+        </label>
+        <label style="font-size:13px;display:block;margin-bottom:10px;">パスワード
+          <input type="password" id="askenLoginPassword" autocomplete="current-password"
+            style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);">
+        </label>
+        <button type="button" id="saveAskenCredentialsBtn" class="save-btn" style="margin-top:0;">ログイン情報を保存</button>
+        <p id="askenCredentialsHint" style="font-size:11px;color:var(--text2);margin-top:8px;line-height:1.5;"></p>
+      </div>
       <div id="askenCookieRefreshSection" style="margin-bottom:14px;padding:12px;border:1.5px solid var(--border);border-radius:12px;background:var(--surface2);">
-        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">ログイン更新（PC向け・かんたん）</div>
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">ログイン更新（予備・Googleログインの場合）</div>
         <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:12px;">
-          ブラウザのセキュリティ上、リズムケアから直接 Cookie は取れません。下の<strong>更新ツール</strong>をダブルクリックするだけで更新できます（初回設定済みならコマンド不要）。
+          メール/パスワードを使わない場合のみ、下の<strong>更新ツール</strong>で Cookie を更新してください。
         </p>
         <div id="askenCookieWizard" style="background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;margin-bottom:10px;">
           <div style="font-size:12px;font-weight:700;margin-bottom:10px;color:var(--accent);">📋 手順（3ステップ）</div>
@@ -1431,6 +1447,7 @@ async function renderSettingsPage() {
   renderAskenMapUI();
   updateAskenPathUI();
   renderAskenSyncStatusPanel();
+  loadAskenCredentialsUI();
 }
 
 function setupDragSort() {
@@ -1717,8 +1734,8 @@ let askenSyncStatus = null;
 
 const ASKEN_SYNC_ERRORS = {
   cookie_expired: 'あすけんのログイン期限切れ',
-  no_cookies: 'Cookieが未設定',
-  auth_failed: '認証エラー',
+  no_cookies: 'ログイン情報が未設定',
+  auth_failed: 'ログイン失敗（ID/パスワードを確認）',
   sync_failed: '同期エラー',
 };
 
@@ -1820,6 +1837,46 @@ async function refreshAskenSyncStatus() {
   }
 }
 
+async function loadAskenCredentialsUI() {
+  const emailEl = document.getElementById('askenLoginEmail');
+  const passEl = document.getElementById('askenLoginPassword');
+  const hintEl = document.getElementById('askenCredentialsHint');
+  if (!emailEl || !currentUser) return;
+  try {
+    const snap = await getDoc(userDoc('asken_config/credentials'));
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.email) emailEl.value = data.email;
+      if (data.password) passEl.value = data.password;
+      if (hintEl) hintEl.textContent = '保存済み。変更したら「ログイン情報を保存」を押してください。';
+    } else if (hintEl) {
+      hintEl.textContent = '初回のみ入力して保存してください。';
+    }
+  } catch (e) {
+    console.warn('あすけんログイン情報の読み込み失敗:', e);
+  }
+}
+
+async function saveAskenCredentialsFromUI() {
+  const email = document.getElementById('askenLoginEmail').value.trim();
+  const password = document.getElementById('askenLoginPassword').value;
+  if (!email || !password) throw new Error('メールアドレスとパスワードを入力してください');
+  await setDoc(userDoc('asken_config/credentials'), {
+    email,
+    password,
+    updatedAtMs: Date.now(),
+  });
+  await setDoc(userDoc('asken_config/status'), {
+    ok: null,
+    error: null,
+    message: 'ログイン情報を保存しました。次回の自動同期をお待ちください。',
+    credentialsUpdatedAt: Date.now(),
+  }, { merge: true });
+  const hintEl = document.getElementById('askenCredentialsHint');
+  if (hintEl) hintEl.textContent = '保存済み。GitHub Secrets にも同じ値を登録してください。';
+  await refreshAskenSyncStatus();
+}
+
 async function cleanupOrphanRecords() {
   const disabledIds = new Set(
     lsGetTypes().filter(t => t.disabled).map(t => parseInt(t.id))
@@ -1896,6 +1953,18 @@ document.getElementById('pullAskenInboxBtn').addEventListener('click', async () 
 
 document.getElementById('cleanupOrphanBtn').addEventListener('click', () => {
   cleanupOrphanRecords();
+});
+
+document.getElementById('saveAskenCredentialsBtn').addEventListener('click', async () => {
+  document.getElementById('importStatus').textContent = '⏳ ログイン情報を保存中...';
+  try {
+    await saveAskenCredentialsFromUI();
+    document.getElementById('importStatus').textContent = '✅ ログイン情報を保存しました';
+    showToast('✅ ログイン情報を保存しました');
+  } catch (err) {
+    document.getElementById('importStatus').textContent = '❌ 保存失敗: ' + err.message;
+    console.error(err);
+  }
 });
 
 document.getElementById('askenOpenFolderHelpBtn').addEventListener('click', () => {

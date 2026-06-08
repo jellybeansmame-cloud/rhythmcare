@@ -8,7 +8,7 @@
 
 クラウド（GitHub Actions）:
   python sync_day.py --push
-  （Firestore asken_config/cookies から Cookie を読み込む）
+  （メール/パスワードで自動ログイン。または Firestore のログイン情報）
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ CHROME_UA = (
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
 CONFIG_PATH = Path(__file__).parent / "firebase_config.json"
+CREDENTIALS_PATH = Path(__file__).parent / "asken_credentials.json"
 
 MEAL_KEYS = ("breakfast", "lunch", "dinner", "sweets")
 MEAL_LABELS = {
@@ -187,7 +188,64 @@ def is_login_page(page: Page) -> bool:
     if "/login" in page.url.lower():
         return True
     html = page.content()
-    return 'id="login_form"' in html or 'action="/login"' in html
+    return (
+        'id="login_form"' in html
+        or 'id="indexForm"' in html
+        or 'id="CustomerMemberEmail"' in html
+    )
+
+
+def load_asken_credentials() -> dict | None:
+    email = os.environ.get("ASKEN_EMAIL", "").strip()
+    password = os.environ.get("ASKEN_PASSWORD", "").strip()
+    if email and password:
+        return {"email": email, "password": password}
+
+    if CREDENTIALS_PATH.exists():
+        data = json.loads(CREDENTIALS_PATH.read_text(encoding="utf-8"))
+        if data.get("email") and data.get("password"):
+            return {"email": data["email"], "password": data["password"]}
+
+    if CONFIG_PATH.exists():
+        config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+        if config.get("asken_email") and config.get("asken_password"):
+            return {
+                "email": config["asken_email"],
+                "password": config["asken_password"],
+            }
+
+    db, uid = get_firestore()
+    snap = (
+        db.collection("users")
+        .document(uid)
+        .collection("asken_config")
+        .document("credentials")
+        .get()
+    )
+    if snap.exists():
+        data = snap.to_dict() or {}
+        if data.get("email") and data.get("password"):
+            return {"email": data["email"], "password": data["password"]}
+    return None
+
+
+def login_with_credentials(page: Page, email: str, password: str) -> None:
+    print("メールアドレスでログイン中...")
+    page.goto(f"{ASKEN_BASE}/login", wait_until="networkidle", timeout=60_000)
+    page.fill("#CustomerMemberEmail", email)
+    page.fill("#CustomerMemberPasswdPlain", password)
+    try:
+        with page.expect_navigation(wait_until="networkidle", timeout=60_000):
+            page.click("#SubmitSubmit")
+    except Exception:
+        page.click("#SubmitSubmit")
+        page.wait_for_load_state("networkidle", timeout=60_000)
+    time.sleep(0.5)
+    if is_login_page(page):
+        raise AuthError(
+            "ログインに失敗しました。メールアドレスとパスワードを確認してください。"
+        )
+    print("ログイン成功")
 
 
 def connect_chrome(playwright, port: int) -> tuple[Any, Page]:
@@ -436,6 +494,7 @@ def run_sync(args: argparse.Namespace) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = None
+    used_credentials = False
     with sync_playwright() as p:
         browser = None
         try:
@@ -450,17 +509,34 @@ def run_sync(args: argparse.Namespace) -> int:
                     if not args.push and not args.output:
                         return 0
             else:
-                try:
-                    storage_state, cookies = load_auth_from_sources()
-                except FileNotFoundError as exc:
-                    push_status(ok=False, error="no_cookies", message=str(exc))
-                    print(f"エラー: {exc}")
-                    return 1
-                browser, page = launch_headless(p, storage_state, cookies)
+                credentials = load_asken_credentials()
+                if credentials:
+                    used_credentials = True
+                    browser, page = launch_headless(p, None, None)
+                    login_with_credentials(
+                        page, credentials["email"], credentials["password"]
+                    )
+                else:
+                    try:
+                        storage_state, cookies = load_auth_from_sources()
+                    except FileNotFoundError as exc:
+                        push_status(
+                            ok=False,
+                            error="no_cookies",
+                            message=(
+                                "あすけんのログイン情報がありません。"
+                                "リズムケア設定でメール/パスワードを保存するか、"
+                                "GitHub Secrets に ASKEN_EMAIL / ASKEN_PASSWORD を設定してください。"
+                            ),
+                        )
+                        print(f"エラー: {exc}")
+                        return 1
+                    browser, page = launch_headless(p, storage_state, cookies)
 
             payload = sync_day(page, args.date)
         except AuthError as exc:
-            push_status(ok=False, error="cookie_expired", message=str(exc))
+            err = "auth_failed" if used_credentials else "cookie_expired"
+            push_status(ok=False, error=err, message=str(exc))
             print(f"認証エラー: {exc}")
             return 1
         except Exception as exc:
