@@ -2,27 +2,32 @@
 """
 あすけんから1日分のデータを取得し、リズムケア用JSONを出力する。
 
-使い方:
-  .\\start-chrome.ps1   # ログイン済みChromeを起動
-  python sync_day.py --connect --date 2026-06-07
+ローカル（Cookie取得）:
+  .\\start-chrome.ps1
+  python sync_day.py --connect --upload-cookies
 
-出力: asken-sync/export/2026-06-07.json
+クラウド（GitHub Actions）:
+  python sync_day.py --push
+  （Firestore asken_config/cookies から Cookie を読み込む）
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Browser, Page, sync_playwright
 
 ASKEN_BASE = "https://www.asken.jp"
 EXPORT_DIR = Path(__file__).parent / "export"
+COOKIES_PATH = Path(__file__).parent / ".asken_cookies.json"
 CONFIG_PATH = Path(__file__).parent / "firebase_config.json"
 
 MEAL_KEYS = ("breakfast", "lunch", "dinner", "sweets")
@@ -120,6 +125,8 @@ def fetch_meals(page: Page, target_date: str) -> dict:
         url = f"{ASKEN_BASE}/wsp/meal/{key}/{target_date}"
         page.goto(url, wait_until="networkidle", timeout=60_000)
         time.sleep(0.5)
+        if is_login_page(page):
+            raise AuthError("あすけんのログインが切れています")
         items = parse_eat_datas(page.content())
         meals[key] = items
         for item in items:
@@ -147,6 +154,8 @@ def fetch_body(page: Page, target_date: str) -> dict:
     comment_url = f"{ASKEN_BASE}/wsp/comment/{target_date}"
     page.goto(comment_url, wait_until="networkidle", timeout=60_000)
     time.sleep(0.3)
+    if is_login_page(page):
+        raise AuthError("あすけんのログインが切れています")
     body.update(parse_comment_body(page.content()))
 
     cal_url = f"{ASKEN_BASE}/my_diary/view_calendar/{year}/{month}/1/0/0"
@@ -165,13 +174,199 @@ def fetch_body(page: Page, target_date: str) -> dict:
     return body
 
 
-def connect_chrome(playwright, port: int):
+class AuthError(Exception):
+    pass
+
+
+def is_login_page(page: Page) -> bool:
+    url = page.url.lower()
+    if "/login" in url:
+        return True
+    html = page.content()
+    if 'action="/login"' in html or 'id="login_form"' in html:
+        return True
+    cookie_names = {c.get("name") for c in page.context.cookies()}
+    if "PSID_0" not in cookie_names and ("あすけんにログイン" in html or "ログインして" in html):
+        return True
+    return False
+
+
+def connect_chrome(playwright, port: int) -> tuple[Any, Page]:
     endpoint = f"http://127.0.0.1:{port}"
     print(f"Chromeに接続: {endpoint}")
     browser = playwright.chromium.connect_over_cdp(endpoint)
     context = browser.contexts[0] if browser.contexts else browser.new_context(locale="ja-JP")
     page = context.pages[0] if context.pages else context.new_page()
     return browser, page
+
+
+def normalize_cookie_list(raw: Any) -> list[dict]:
+    if isinstance(raw, dict) and "cookies" in raw:
+        raw = raw["cookies"]
+    if not isinstance(raw, list):
+        raise ValueError("CookieはJSON配列、または {\"cookies\": [...]} 形式で指定してください")
+    cookies = []
+    for item in raw:
+        if not isinstance(item, dict) or "name" not in item or "value" not in item:
+            raise ValueError("Cookieの形式が正しくありません")
+        cookie = {
+            "name": item["name"],
+            "value": item["value"],
+            "domain": item.get("domain", ".asken.jp"),
+            "path": item.get("path", "/"),
+        }
+        if "expires" in item:
+            cookie["expires"] = item["expires"]
+        if "httpOnly" in item:
+            cookie["httpOnly"] = item["httpOnly"]
+        if "secure" in item:
+            cookie["secure"] = item["secure"]
+        if "sameSite" in item and item["sameSite"]:
+            cookie["sameSite"] = item["sameSite"]
+        cookies.append(cookie)
+    return cookies
+
+
+def load_cookies_from_sources() -> list[dict]:
+    env_json = os.environ.get("ASKEN_COOKIES_JSON")
+    if env_json:
+        return normalize_cookie_list(json.loads(env_json))
+
+    if COOKIES_PATH.exists():
+        return normalize_cookie_list(json.loads(COOKIES_PATH.read_text(encoding="utf-8")))
+
+    db, uid = get_firestore()
+    snap = db.collection("users").document(uid).collection("asken_config").document("cookies").get()
+    if snap.exists:
+        data = snap.to_dict() or {}
+        if data.get("cookies"):
+            return normalize_cookie_list(data)
+
+    raise FileNotFoundError(
+        "Cookieが見つかりません。Firestoreに保存するか .asken_cookies.json を用意してください。"
+    )
+
+
+def save_cookies_local(cookies: list[dict]) -> None:
+    COOKIES_PATH.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"Cookieを保存しました: {COOKIES_PATH}")
+
+
+def launch_with_cookies(playwright, cookies: list[dict]) -> tuple[Browser, Page]:
+    browser = playwright.chromium.launch(headless=True)
+    context = browser.new_context(locale="ja-JP")
+    context.add_cookies(cookies)
+    page = context.new_page()
+    return browser, page
+
+
+def collect_cookies_from_browser(page: Page) -> list[dict]:
+    return page.context.cookies()
+
+
+def load_firebase_settings() -> tuple[str, Any]:
+    uid = os.environ.get("FIREBASE_UID", "").strip()
+    sa_json = os.environ.get("FIREBASE_SERVICE_ACCOUNT_JSON", "").strip()
+
+    if sa_json:
+        if not uid:
+            raise ValueError("FIREBASE_UID 環境変数を設定してください")
+        return uid, json.loads(sa_json)
+
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError(
+            f"{CONFIG_PATH.name} がありません。firebase_config.json.example をコピーして設定してください。"
+        )
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    uid = config.get("firebase_uid", "")
+    key_path = Path(config.get("service_account_json", "serviceAccountKey.json"))
+    if not uid:
+        raise ValueError("firebase_config.json に firebase_uid を設定してください")
+    if not key_path.is_absolute():
+        key_path = Path(__file__).parent / key_path
+    if not key_path.exists():
+        raise FileNotFoundError(f"サービスアカウントキーが見つかりません: {key_path}")
+    return uid, str(key_path)
+
+
+def get_firestore():
+    import firebase_admin
+    from firebase_admin import credentials, firestore
+
+    uid, cred = load_firebase_settings()
+    if not firebase_admin._apps:
+        if isinstance(cred, dict):
+            firebase_admin.initialize_app(credentials.Certificate(cred))
+        else:
+            firebase_admin.initialize_app(credentials.Certificate(cred))
+    return firestore.client(), uid
+
+
+def push_status(
+    *,
+    ok: bool,
+    error: str | None = None,
+    message: str | None = None,
+    synced_date: str | None = None,
+) -> None:
+    db, uid = get_firestore()
+    from firebase_admin import firestore as fs
+
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    payload: dict[str, Any] = {
+        "ok": ok,
+        "error": error,
+        "message": message or "",
+        "lastAttemptAt": now_ms,
+        "updatedAt": fs.SERVER_TIMESTAMP,
+    }
+    if ok:
+        payload["lastSuccessAt"] = now_ms
+        if synced_date:
+            payload["lastSyncedDate"] = synced_date
+    ref = db.collection("users").document(uid).collection("asken_config").document("status")
+    ref.set(payload, merge=True)
+    print(f"同期ステータスを更新しました: ok={ok} error={error}")
+
+
+def upload_cookies_to_firestore(cookies: list[dict]) -> None:
+    db, uid = get_firestore()
+    from firebase_admin import firestore as fs
+
+    ref = db.collection("users").document(uid).collection("asken_config").document("cookies")
+    ref.set(
+        {
+            "cookies": cookies,
+            "updatedAt": fs.SERVER_TIMESTAMP,
+            "updatedAtMs": int(datetime.now(timezone.utc).timestamp() * 1000),
+        }
+    )
+    status_ref = db.collection("users").document(uid).collection("asken_config").document("status")
+    status_ref.set(
+        {
+            "ok": None,
+            "error": None,
+            "message": "Cookieを更新しました。次回の自動同期をお待ちください。",
+            "cookiesUpdatedAt": int(datetime.now(timezone.utc).timestamp() * 1000),
+            "updatedAt": fs.SERVER_TIMESTAMP,
+        },
+        merge=True,
+    )
+    print(f"FirestoreにCookieを保存しました: users/{uid}/asken_config/cookies")
+
+
+def push_to_firestore(payload: dict) -> None:
+    db, uid = get_firestore()
+    from firebase_admin import firestore as fs
+
+    ref = (
+        db.collection("users")
+        .document(uid)
+        .collection("asken_inbox")
+        .document(payload["date"])
+    )
+    ref.set({**payload, "pushedAt": fs.SERVER_TIMESTAMP})
+    print(f"Firestore受信箱に送信しました: users/{uid}/asken_inbox/{payload['date']}")
 
 
 def sync_day(page: Page, target_date: str) -> dict:
@@ -192,38 +387,6 @@ def sync_day(page: Page, target_date: str) -> dict:
         "physiology": body_data.get("physiology", False),
     }
     return payload
-
-
-def push_to_firestore(payload: dict) -> None:
-    if not CONFIG_PATH.exists():
-        raise FileNotFoundError(
-            f"{CONFIG_PATH.name} がありません。firebase_config.json.example をコピーして設定してください。"
-        )
-    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    uid = config.get("firebase_uid")
-    key_path = Path(config.get("service_account_json", "serviceAccountKey.json"))
-    if not uid:
-        raise ValueError("firebase_config.json に firebase_uid を設定してください")
-    if not key_path.is_absolute():
-        key_path = Path(__file__).parent / key_path
-    if not key_path.exists():
-        raise FileNotFoundError(f"サービスアカウントキーが見つかりません: {key_path}")
-
-    import firebase_admin
-    from firebase_admin import credentials, firestore
-
-    if not firebase_admin._apps:
-        firebase_admin.initialize_app(credentials.Certificate(str(key_path)))
-
-    db = firestore.client()
-    ref = (
-        db.collection("users")
-        .document(uid)
-        .collection("asken_inbox")
-        .document(payload["date"])
-    )
-    ref.set({**payload, "pushedAt": firestore.SERVER_TIMESTAMP})
-    print(f"Firestore受信箱に送信しました: users/{uid}/asken_inbox/{payload['date']}")
 
 
 def print_summary(payload: dict) -> None:
@@ -247,6 +410,75 @@ def print_summary(payload: dict) -> None:
     print(f"生理: {'あり' if payload.get('physiology') else 'なし'}")
 
 
+def run_sync(args: argparse.Namespace) -> int:
+    out_path = Path(args.output) if args.output else EXPORT_DIR / f"{args.date}.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    browser = None
+    try:
+        with sync_playwright() as p:
+            if args.connect:
+                browser, page = connect_chrome(p, args.cdp_port)
+                if args.upload_cookies or args.save_cookies:
+                    cookies = collect_cookies_from_browser(page)
+                    if args.save_cookies:
+                        save_cookies_local(cookies)
+                    if args.upload_cookies:
+                        upload_cookies_to_firestore(cookies)
+                    if not args.push and not args.output:
+                        return 0
+            else:
+                try:
+                    cookies = load_cookies_from_sources()
+                except FileNotFoundError as exc:
+                    push_status(
+                        ok=False,
+                        error="no_cookies",
+                        message=str(exc),
+                    )
+                    print(f"エラー: {exc}")
+                    return 1
+                browser, page = launch_with_cookies(p, cookies)
+
+            payload = sync_day(page, args.date)
+    except AuthError as exc:
+        push_status(ok=False, error="cookie_expired", message=str(exc))
+        print(f"認証エラー: {exc}")
+        return 1
+    except Exception as exc:
+        push_status(ok=False, error="sync_failed", message=str(exc))
+        print(f"取得失敗: {exc}")
+        return 1
+    finally:
+        if browser and not args.connect:
+            browser.close()
+
+    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    print_summary(payload)
+    print(f"\n保存しました: {out_path}")
+
+    if args.push:
+        try:
+            push_to_firestore(payload)
+            push_status(
+                ok=True,
+                error=None,
+                message="同期に成功しました",
+                synced_date=payload["date"],
+            )
+            print("スマホのリズムケアを開くと自動で反映されます。")
+        except ImportError:
+            push_status(ok=False, error="sync_failed", message="firebase-admin が未インストール")
+            print("\nエラー: firebase-admin が未インストールです")
+            print("  pip install firebase-admin")
+            return 1
+        except Exception as exc:
+            push_status(ok=False, error="sync_failed", message=str(exc))
+            print(f"\nFirestore送信失敗: {exc}")
+            return 1
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="あすけん1日分をリズムケア用JSONに出力")
     parser.add_argument("--date", default=date.today().isoformat(), help="YYYY-MM-DD")
@@ -258,50 +490,22 @@ def main() -> int:
         action="store_true",
         help="Firestoreのasken_inboxに送信（スマホが自動取り込み）",
     )
+    parser.add_argument(
+        "--save-cookies",
+        action="store_true",
+        help="接続中ChromeのCookieを .asken_cookies.json に保存",
+    )
+    parser.add_argument(
+        "--upload-cookies",
+        action="store_true",
+        help="接続中ChromeのCookieを Firestore asken_config/cookies に保存",
+    )
     args = parser.parse_args()
 
-    if not args.connect:
-        print("エラー: --connect を付けて実行してください")
-        print("  1. .\\start-chrome.ps1")
-        print("  2. python sync_day.py --connect --date 2026-06-07")
-        return 1
+    if not args.connect and not args.push and not args.output:
+        parser.error("--connect、--push、または -o のいずれかを指定してください")
 
-    out_path = Path(args.output) if args.output else EXPORT_DIR / f"{args.date}.json"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with sync_playwright() as p:
-        try:
-            browser, page = connect_chrome(p, args.cdp_port)
-        except Exception as exc:
-            print(f"Chrome接続失敗: {exc}")
-            print("先に .\\start-chrome.ps1 を実行し、あすけんにログインしてください")
-            return 1
-
-        try:
-            payload = sync_day(page, args.date)
-        except Exception as exc:
-            print(f"取得失敗: {exc}")
-            return 1
-
-    out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    print_summary(payload)
-    print(f"\n保存しました: {out_path}")
-
-    if args.push:
-        try:
-            push_to_firestore(payload)
-            print("スマホのリズムケアを開くと自動で反映されます。")
-        except ImportError:
-            print("\nエラー: firebase-admin が未インストールです")
-            print("  pip install firebase-admin")
-            return 1
-        except Exception as exc:
-            print(f"\nFirestore送信失敗: {exc}")
-            return 1
-    else:
-        print("\n自動反映するには --push を付けて実行してください")
-        print("  手動の場合: リズムケア → 設定 → JSON貼り付け")
-    return 0
+    return run_sync(args)
 
 
 if __name__ == "__main__":

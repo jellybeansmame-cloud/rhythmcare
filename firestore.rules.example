@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+
+      match /days/{dayId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      match /config/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+
+      // あすけん受信箱: スマホが読み取り・取り込み後に削除
+      match /asken_inbox/{dateId} {
+        allow read, delete: if request.auth != null && request.auth.uid == userId;
+        allow create, update: if false;
+      }
+
+      // あすけん連携設定（Cookie・同期ステータス）
+      match /asken_config/{docId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+  }
+}

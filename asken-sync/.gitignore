@@ -4,3 +4,4 @@ output/
 export/
 firebase_config.json
 serviceAccountKey.json
+.asken_cookies.json

@@ -14,7 +14,7 @@ if (-not (Test-Path -LiteralPath $chrome)) {
 
 Write-Host "Starting Chrome (remote debugging port 9222)"
 Write-Host "1. Sign in to Asuken with Google in this window"
-Write-Host "2. In another terminal: python investigate.py --connect"
+Write-Host "2. In another terminal: python sync_day.py --connect --upload-cookies"
 Write-Host ""
 
 $args = @(
