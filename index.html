@@ -1416,6 +1416,28 @@ async function importData(data) {
 // あすけん同期JSONインポート
 // ==============================
 const ASKEN_MEAL_LABELS = { breakfast: '朝食', lunch: '昼食', dinner: '夕食', sweets: '間食' };
+const ASKEN_MEAL_TITLE = 'ごはんログ';
+const ASKEN_MEAL_MARKER = '\n--- あすけん同期 ---\n';
+
+function findAskenType(title) {
+  const types = lsGetTypes();
+  const found = types.find(t => t.title === title && !t.disabled);
+  if (!found) throw new Error(`「${title}」項目が見つかりません。リズムケアの設定で先に作成してください`);
+  return parseInt(found.id);
+}
+
+function normalizeAskenWeight(val) {
+  if (val == null || val === '') return null;
+  const m = String(val).replace(/,/g, '').match(/[\d.]+/);
+  return m ? m[0] : null;
+}
+
+function mergeMealText(existingText, mealText) {
+  if (!mealText) return existingText || null;
+  const base = (existingText || '').split(ASKEN_MEAL_MARKER)[0].trimEnd();
+  if (!base) return mealText;
+  return base + ASKEN_MEAL_MARKER + mealText;
+}
 
 function ensureAskenType(title, { dataType, unitName, iconName }) {
   const types = lsGetTypes();
@@ -1451,13 +1473,13 @@ async function importAskenDay(data) {
   }
 
   const dateStr = data.date;
-  const typeMeal = ensureAskenType('食事記録', { dataType: 14, iconName: 'f_n' });
+  const typeMeal = findAskenType(ASKEN_MEAL_TITLE);
   const typeWeight = ensureAskenType('体重', { dataType: 4, unitName: 'kg', iconName: 'weight' });
   const typeBowel = ensureAskenType('お通じ', { dataType: 10, iconName: 'toilet' });
   const typePhys = ensureAskenType('生理', { dataType: 10, iconName: 'period' });
-  const askenTypeIds = new Set([typeMeal, typeWeight, typeBowel, typePhys]);
+  const replaceTypeIds = new Set([typeWeight, typeBowel, typePhys]);
 
-  let records = lsGetRecords().filter(r => !(r.date === dateStr && askenTypeIds.has(parseInt(r.typeId))));
+  let records = lsGetRecords().filter(r => !(r.date === dateStr && replaceTypeIds.has(parseInt(r.typeId))));
   let nextId = records.reduce((m, r) => Math.max(m, parseInt(r.id) || 0), 0);
 
   const push = (typeId, fields) => {
@@ -1465,9 +1487,20 @@ async function importAskenDay(data) {
   };
 
   const mealText = formatAskenMeals(data.meals, data.meal_total_kcal);
-  if (mealText) push(typeMeal, { textValue: mealText });
+  if (mealText) {
+    const mealIdx = records.findIndex(r => r.date === dateStr && parseInt(r.typeId) === typeMeal);
+    if (mealIdx >= 0) {
+      records[mealIdx] = {
+        ...records[mealIdx],
+        textValue: mergeMealText(records[mealIdx].textValue, mealText),
+      };
+    } else {
+      push(typeMeal, { textValue: mealText });
+    }
+  }
 
-  if (data.weight) push(typeWeight, { value: String(data.weight) });
+  const weight = normalizeAskenWeight(data.weight);
+  if (weight) push(typeWeight, { value: weight });
 
   if (data.bowel === 'yes') push(typeBowel, { value: '1' });
   else if (data.bowel === 'no') push(typeBowel, { value: '0' });
@@ -1477,7 +1510,7 @@ async function importAskenDay(data) {
   lsSetRecords(records);
   appTypes = lsGetTypes().map(t => ({ ...t, id: parseInt(t.id), dataType: parseInt(t.dataType) }));
 
-  for (const tid of askenTypeIds) {
+  for (const tid of [typeWeight, typeBowel, typePhys]) {
     if (!appDisplist.map(id => parseInt(id)).includes(tid)) appDisplist.push(tid);
   }
   await saveDisplist();

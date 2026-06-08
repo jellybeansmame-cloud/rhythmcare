@@ -132,6 +132,13 @@ def fetch_meals(page: Page, target_date: str) -> dict:
     }
 
 
+def normalize_weight(val: str | None) -> str | None:
+    if not val:
+        return None
+    match = re.search(r"[\d.]+", str(val).replace(",", ""))
+    return match.group(0) if match else None
+
+
 def fetch_body(page: Page, target_date: str) -> dict:
     year, month, day = (int(x) for x in target_date.split("-"))
     body: dict = {}
@@ -177,7 +184,7 @@ def sync_day(page: Page, target_date: str) -> dict:
         "date": target_date,
         "meals": meal_data["meals"],
         "meal_total_kcal": meal_data["meal_total_kcal"],
-        "weight": body_data.get("weight"),
+        "weight": normalize_weight(body_data.get("weight")),
         "body_fat": body_data.get("body_fat"),
         "steps": body_data.get("steps"),
         "bowel": body_data.get("bowel"),
