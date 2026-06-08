@@ -28,6 +28,11 @@ from playwright.sync_api import Browser, Page, sync_playwright
 ASKEN_BASE = "https://www.asken.jp"
 EXPORT_DIR = Path(__file__).parent / "export"
 COOKIES_PATH = Path(__file__).parent / ".asken_cookies.json"
+STORAGE_PATH = Path(__file__).parent / ".asken_storage_state.json"
+CHROME_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
 CONFIG_PATH = Path(__file__).parent / "firebase_config.json"
 
 MEAL_KEYS = ("breakfast", "lunch", "dinner", "sweets")
@@ -179,16 +184,10 @@ class AuthError(Exception):
 
 
 def is_login_page(page: Page) -> bool:
-    url = page.url.lower()
-    if "/login" in url:
+    if "/login" in page.url.lower():
         return True
     html = page.content()
-    if 'action="/login"' in html or 'id="login_form"' in html:
-        return True
-    cookie_names = {c.get("name") for c in page.context.cookies()}
-    if "PSID_0" not in cookie_names and ("あすけんにログイン" in html or "ログインして" in html):
-        return True
-    return False
+    return 'id="login_form"' in html or 'action="/login"' in html
 
 
 def connect_chrome(playwright, port: int) -> tuple[Any, Page]:
@@ -227,41 +226,62 @@ def normalize_cookie_list(raw: Any) -> list[dict]:
     return cookies
 
 
-def load_cookies_from_sources() -> list[dict]:
+def load_auth_from_sources() -> tuple[dict | None, list[dict] | None]:
+    env_state = os.environ.get("ASKEN_STORAGE_STATE_JSON")
+    if env_state:
+        state = json.loads(env_state)
+        return state, state.get("cookies")
+
+    if STORAGE_PATH.exists():
+        state = json.loads(STORAGE_PATH.read_text(encoding="utf-8"))
+        return state, state.get("cookies")
+
     env_json = os.environ.get("ASKEN_COOKIES_JSON")
     if env_json:
-        return normalize_cookie_list(json.loads(env_json))
+        cookies = normalize_cookie_list(json.loads(env_json))
+        return None, cookies
 
     if COOKIES_PATH.exists():
-        return normalize_cookie_list(json.loads(COOKIES_PATH.read_text(encoding="utf-8")))
+        cookies = normalize_cookie_list(json.loads(COOKIES_PATH.read_text(encoding="utf-8")))
+        return None, cookies
 
     db, uid = get_firestore()
     snap = db.collection("users").document(uid).collection("asken_config").document("cookies").get()
     if snap.exists:
         data = snap.to_dict() or {}
+        if data.get("storage_state"):
+            state = data["storage_state"]
+            return state, state.get("cookies")
         if data.get("cookies"):
-            return normalize_cookie_list(data)
+            return None, normalize_cookie_list(data)
 
     raise FileNotFoundError(
-        "Cookieが見つかりません。Firestoreに保存するか .asken_cookies.json を用意してください。"
+        "ログイン情報が見つかりません。refresh-cookies.bat を実行してください。"
     )
 
 
-def save_cookies_local(cookies: list[dict]) -> None:
-    COOKIES_PATH.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"Cookieを保存しました: {COOKIES_PATH}")
+def save_auth_local(storage_state: dict) -> None:
+    STORAGE_PATH.write_text(json.dumps(storage_state, ensure_ascii=False, indent=2), encoding="utf-8")
+    cookies = storage_state.get("cookies", [])
+    if cookies:
+        COOKIES_PATH.write_text(json.dumps(cookies, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"ログイン情報を保存しました: {STORAGE_PATH}")
 
 
-def launch_with_cookies(playwright, cookies: list[dict]) -> tuple[Browser, Page]:
+def launch_headless(playwright, storage_state: dict | None, cookies: list[dict] | None) -> tuple[Browser, Page]:
     browser = playwright.chromium.launch(headless=True)
-    context = browser.new_context(locale="ja-JP")
-    context.add_cookies(cookies)
+    context_kwargs: dict[str, Any] = {"locale": "ja-JP", "user_agent": CHROME_UA}
+    if storage_state:
+        context_kwargs["storage_state"] = storage_state
+    context = browser.new_context(**context_kwargs)
+    if cookies and not storage_state:
+        context.add_cookies(cookies)
     page = context.new_page()
     return browser, page
 
 
-def collect_cookies_from_browser(page: Page) -> list[dict]:
-    return page.context.cookies()
+def collect_storage_state(page: Page) -> dict:
+    return page.context.storage_state()
 
 
 def load_firebase_settings() -> tuple[str, Any]:
@@ -329,14 +349,15 @@ def push_status(
     print(f"同期ステータスを更新しました: ok={ok} error={error}")
 
 
-def upload_cookies_to_firestore(cookies: list[dict]) -> None:
+def upload_auth_to_firestore(storage_state: dict) -> None:
     db, uid = get_firestore()
     from firebase_admin import firestore as fs
 
     ref = db.collection("users").document(uid).collection("asken_config").document("cookies")
     ref.set(
         {
-            "cookies": cookies,
+            "storage_state": storage_state,
+            "cookies": storage_state.get("cookies", []),
             "updatedAt": fs.SERVER_TIMESTAMP,
             "updatedAtMs": int(datetime.now(timezone.utc).timestamp() * 1000),
         }
@@ -346,13 +367,13 @@ def upload_cookies_to_firestore(cookies: list[dict]) -> None:
         {
             "ok": None,
             "error": None,
-            "message": "Cookieを更新しました。次回の自動同期をお待ちください。",
+            "message": "ログイン情報を更新しました。次回の自動同期をお待ちください。",
             "cookiesUpdatedAt": int(datetime.now(timezone.utc).timestamp() * 1000),
             "updatedAt": fs.SERVER_TIMESTAMP,
         },
         merge=True,
     )
-    print(f"FirestoreにCookieを保存しました: users/{uid}/asken_config/cookies")
+    print(f"Firestoreにログイン情報を保存しました: users/{uid}/asken_config/cookies")
 
 
 def push_to_firestore(payload: dict) -> None:
@@ -414,44 +435,44 @@ def run_sync(args: argparse.Namespace) -> int:
     out_path = Path(args.output) if args.output else EXPORT_DIR / f"{args.date}.json"
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    browser = None
-    try:
-        with sync_playwright() as p:
+    payload = None
+    with sync_playwright() as p:
+        browser = None
+        try:
             if args.connect:
                 browser, page = connect_chrome(p, args.cdp_port)
                 if args.upload_cookies or args.save_cookies:
-                    cookies = collect_cookies_from_browser(page)
+                    storage_state = collect_storage_state(page)
                     if args.save_cookies:
-                        save_cookies_local(cookies)
+                        save_auth_local(storage_state)
                     if args.upload_cookies:
-                        upload_cookies_to_firestore(cookies)
+                        upload_auth_to_firestore(storage_state)
                     if not args.push and not args.output:
                         return 0
             else:
                 try:
-                    cookies = load_cookies_from_sources()
+                    storage_state, cookies = load_auth_from_sources()
                 except FileNotFoundError as exc:
-                    push_status(
-                        ok=False,
-                        error="no_cookies",
-                        message=str(exc),
-                    )
+                    push_status(ok=False, error="no_cookies", message=str(exc))
                     print(f"エラー: {exc}")
                     return 1
-                browser, page = launch_with_cookies(p, cookies)
+                browser, page = launch_headless(p, storage_state, cookies)
 
             payload = sync_day(page, args.date)
-    except AuthError as exc:
-        push_status(ok=False, error="cookie_expired", message=str(exc))
-        print(f"認証エラー: {exc}")
+        except AuthError as exc:
+            push_status(ok=False, error="cookie_expired", message=str(exc))
+            print(f"認証エラー: {exc}")
+            return 1
+        except Exception as exc:
+            push_status(ok=False, error="sync_failed", message=str(exc))
+            print(f"取得失敗: {exc}")
+            return 1
+        finally:
+            if browser and not args.connect:
+                browser.close()
+
+    if not payload:
         return 1
-    except Exception as exc:
-        push_status(ok=False, error="sync_failed", message=str(exc))
-        print(f"取得失敗: {exc}")
-        return 1
-    finally:
-        if browser and not args.connect:
-            browser.close()
 
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print_summary(payload)

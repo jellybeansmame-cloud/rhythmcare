@@ -5,3 +5,4 @@ export/
 firebase_config.json
 serviceAccountKey.json
 .asken_cookies.json
+.asken_storage_state.json
