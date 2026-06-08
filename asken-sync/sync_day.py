@@ -23,6 +23,7 @@ from playwright.sync_api import Page, sync_playwright
 
 ASKEN_BASE = "https://www.asken.jp"
 EXPORT_DIR = Path(__file__).parent / "export"
+CONFIG_PATH = Path(__file__).parent / "firebase_config.json"
 
 MEAL_KEYS = ("breakfast", "lunch", "dinner", "sweets")
 MEAL_LABELS = {
@@ -193,6 +194,38 @@ def sync_day(page: Page, target_date: str) -> dict:
     return payload
 
 
+def push_to_firestore(payload: dict) -> None:
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError(
+            f"{CONFIG_PATH.name} がありません。firebase_config.json.example をコピーして設定してください。"
+        )
+    config = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    uid = config.get("firebase_uid")
+    key_path = Path(config.get("service_account_json", "serviceAccountKey.json"))
+    if not uid:
+        raise ValueError("firebase_config.json に firebase_uid を設定してください")
+    if not key_path.is_absolute():
+        key_path = Path(__file__).parent / key_path
+    if not key_path.exists():
+        raise FileNotFoundError(f"サービスアカウントキーが見つかりません: {key_path}")
+
+    import firebase_admin
+    from firebase_admin import credentials, firestore
+
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(credentials.Certificate(str(key_path)))
+
+    db = firestore.client()
+    ref = (
+        db.collection("users")
+        .document(uid)
+        .collection("asken_inbox")
+        .document(payload["date"])
+    )
+    ref.set({**payload, "pushedAt": firestore.SERVER_TIMESTAMP})
+    print(f"Firestore受信箱に送信しました: users/{uid}/asken_inbox/{payload['date']}")
+
+
 def print_summary(payload: dict) -> None:
     print("\n--- 取得結果 ---")
     print(f"日付: {payload['date']}")
@@ -220,6 +253,11 @@ def main() -> int:
     parser.add_argument("--connect", action="store_true", help="start-chrome.ps1 のChromeに接続")
     parser.add_argument("--cdp-port", type=int, default=9222)
     parser.add_argument("-o", "--output", help="出力ファイル（省略時は export/日付.json）")
+    parser.add_argument(
+        "--push",
+        action="store_true",
+        help="Firestoreのasken_inboxに送信（スマホが自動取り込み）",
+    )
     args = parser.parse_args()
 
     if not args.connect:
@@ -248,8 +286,21 @@ def main() -> int:
     out_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print_summary(payload)
     print(f"\n保存しました: {out_path}")
-    print("\n次のステップ:")
-    print("  リズムケア → 設定 → あすけん同期JSON からこのファイルをインポート")
+
+    if args.push:
+        try:
+            push_to_firestore(payload)
+            print("スマホのリズムケアを開くと自動で反映されます。")
+        except ImportError:
+            print("\nエラー: firebase-admin が未インストールです")
+            print("  pip install firebase-admin")
+            return 1
+        except Exception as exc:
+            print(f"\nFirestore送信失敗: {exc}")
+            return 1
+    else:
+        print("\n自動反映するには --push を付けて実行してください")
+        print("  手動の場合: リズムケア → 設定 → JSON貼り付け")
     return 0
 
 

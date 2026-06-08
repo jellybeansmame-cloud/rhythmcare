@@ -1,0 +1,4 @@
+{
+  "firebase_uid": "リズムケア設定画面に表示されるユーザーIDをここに貼る",
+  "service_account_json": "serviceAccountKey.json"
+}

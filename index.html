@@ -403,6 +403,23 @@
         <p style="font-size:13px;">または JSONファイルを選択（PC向け）</p>
         <input type="file" id="askenImportFile" accept=".json,application/json" style="display:none">
       </div>
+      <div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border);">
+        <div style="font-size:13px;font-weight:700;margin-bottom:8px;">項目の紐づけ</div>
+        <div style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">あすけんの各データを、リズムケアのどの項目に入れるか選びます。</div>
+        <div style="display:grid;gap:8px;margin-bottom:10px;">
+          <label style="font-size:13px;">食事<select id="askenMapMeal" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
+          <label style="font-size:13px;">体重<select id="askenMapWeight" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
+          <label style="font-size:13px;">お通じ<select id="askenMapBowel" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
+          <label style="font-size:13px;">生理<select id="askenMapPhys" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
+        </div>
+        <button type="button" id="saveAskenMapBtn" class="add-btn" style="width:100%;margin-bottom:12px;">紐づけを保存</button>
+        <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:8px;">
+          PC自動同期用ユーザーID:<br>
+          <code id="askenUserId" style="font-size:11px;word-break:break-all;">（ログイン後に表示）</code>
+        </div>
+        <button type="button" id="pullAskenInboxBtn" class="save-btn" style="margin-top:0;margin-bottom:8px;">あすけん受信箱を今すぐ取り込む</button>
+        <button type="button" id="cleanupOrphanBtn" style="width:100%;padding:10px;border-radius:10px;border:1.5px solid var(--border);background:var(--surface);font-size:13px;cursor:pointer;font-family:'Zen Kaku Gothic New',sans-serif;">削除済み項目の記録を消す</button>
+      </div>
     </div>
     <div id="importStatus" style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:16px;margin-top:12px;"></div>
   </div>
@@ -514,7 +531,7 @@
 // ==============================
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, setPersistence, browserLocalPersistence } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
-import { getFirestore, doc, getDoc, setDoc, collection, getDocs, writeBatch, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getFirestore, doc, getDoc, setDoc, deleteDoc, collection, getDocs, writeBatch, query, where } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyB64CKFkklW4KYmYa4mZXFwh61YDXy25fI",
@@ -715,9 +732,19 @@ async function firestoreRestore() {
         if (data.records) allRecords.push(...data.records);
       }
     });
-    if (allRecords.length > 0) lsSetRecords(allRecords);
+    if (allRecords.length > 0) lsSetRecords(mergeRecords(lsGetRecords(), allRecords));
     return true;
   } catch(e) { console.error('Firestore復元失敗:', e); return false; }
+}
+
+function mergeRecords(local, remote) {
+  const byKey = new Map();
+  remote.forEach(r => byKey.set(`${r.date}:${parseInt(r.typeId)}`, { ...r }));
+  local.forEach(r => {
+    const key = `${r.date}:${parseInt(r.typeId)}`;
+    if (!byKey.has(key)) byKey.set(key, { ...r });
+  });
+  return Array.from(byKey.values());
 }
 
 // フルバックアップ（インポート時）
@@ -1315,7 +1342,7 @@ async function renderSettingsPage() {
       const tid = parseInt(btn.dataset.deltype);
       const t = typesMap[tid];
       if (!t) return;
-      if (!confirm(`「${t.title}」を削除しますか？\n\n⚠️ 再度同じ名前で項目を追加してもデータは引き継げません。\n入力済みのデータは履歴で引き続き確認できます。`)) return;
+      if (!confirm(`「${t.title}」を削除しますか？\n\n⚠️ 再度同じ名前で項目を追加してもデータは引き継げません。\n入力済みの記録は残ります。不要なら「削除済み項目の記録を消す」で削除できます。`)) return;
       const types = lsGetTypes().map(tp => parseInt(tp.id) === tid ? {...tp, disabled: true} : tp);
       lsSetTypes(types);
       appTypes = types.map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
@@ -1324,6 +1351,7 @@ async function renderSettingsPage() {
     });
   });
   setupDragSort();
+  renderAskenMapUI();
 }
 
 function setupDragSort() {
@@ -1416,14 +1444,74 @@ async function importData(data) {
 // あすけん同期JSONインポート
 // ==============================
 const ASKEN_MEAL_LABELS = { breakfast: '朝食', lunch: '昼食', dinner: '夕食', sweets: '間食' };
-const ASKEN_MEAL_TITLE = 'ごはんログ';
 const ASKEN_MEAL_MARKER = '\n--- あすけん同期 ---\n';
+const ASKEN_DEFAULT_TITLES = { meal: 'ごはんログ', weight: '体重', bowel: 'お通じ', phys: '生理' };
 
-function findAskenType(title) {
-  const types = lsGetTypes();
-  const found = types.find(t => t.title === title && !t.disabled);
-  if (!found) throw new Error(`「${title}」項目が見つかりません。リズムケアの設定で先に作成してください`);
-  return parseInt(found.id);
+function getDefaultAskenMap() {
+  const map = {};
+  Object.entries(ASKEN_DEFAULT_TITLES).forEach(([key, title]) => {
+    const t = lsGetTypes().find(tp => tp.title === title && !tp.disabled);
+    if (t) map[key] = parseInt(t.id);
+  });
+  return map;
+}
+
+function getAskenMap() {
+  const meta = lsGetMeta();
+  const map = { ...getDefaultAskenMap() };
+  const saved = meta.askenMap || {};
+  Object.keys(saved).forEach(k => {
+    if (saved[k]) map[k] = parseInt(saved[k]);
+  });
+  return map;
+}
+
+function saveAskenMapFromUI() {
+  const read = id => {
+    const v = parseInt(document.getElementById(id).value);
+    return v || null;
+  };
+  const map = {
+    meal: read('askenMapMeal'),
+    weight: read('askenMapWeight'),
+    bowel: read('askenMapBowel'),
+    phys: read('askenMapPhys'),
+  };
+  const meta = lsGetMeta();
+  meta.askenMap = map;
+  lsSetMeta(meta);
+  firestoreBackupMeta().catch(() => {});
+  return map;
+}
+
+function renderAskenMapUI() {
+  const map = getAskenMap();
+  const types = lsGetTypes().filter(t => !t.disabled && parseInt(t.dataType) !== 50);
+  const fill = (id, key, filter) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = '<option value="">（未設定）</option>';
+    types.filter(filter).forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id;
+      opt.textContent = t.title;
+      if (parseInt(map[key]) === parseInt(t.id)) opt.selected = true;
+      el.appendChild(opt);
+    });
+  };
+  fill('askenMapMeal', 'meal', t => parseInt(t.dataType) === 14);
+  fill('askenMapWeight', 'weight', t => [1, 4, 13, 15].includes(parseInt(t.dataType)));
+  fill('askenMapBowel', 'bowel', t => parseInt(t.dataType) === 10);
+  fill('askenMapPhys', 'phys', t => parseInt(t.dataType) === 10);
+  const uidEl = document.getElementById('askenUserId');
+  if (uidEl) uidEl.textContent = currentUser ? currentUser.uid : '（ログイン後に表示）';
+}
+
+function resolveAskenTypeId(key, { dataType, unitName, iconName, title }) {
+  const map = getAskenMap();
+  if (map[key]) return parseInt(map[key]);
+  if (title) return ensureAskenType(title, { dataType, unitName, iconName });
+  return null;
 }
 
 function normalizeAskenWeight(val) {
@@ -1473,11 +1561,12 @@ async function importAskenDay(data) {
   }
 
   const dateStr = data.date;
-  const typeMeal = findAskenType(ASKEN_MEAL_TITLE);
-  const typeWeight = ensureAskenType('体重', { dataType: 4, unitName: 'kg', iconName: 'weight' });
-  const typeBowel = ensureAskenType('お通じ', { dataType: 10, iconName: 'toilet' });
-  const typePhys = ensureAskenType('生理', { dataType: 10, iconName: 'period' });
-  const replaceTypeIds = new Set([typeWeight, typeBowel, typePhys]);
+  const typeMeal = resolveAskenTypeId('meal', { dataType: 14, iconName: 'f_n', title: ASKEN_DEFAULT_TITLES.meal });
+  if (!typeMeal) throw new Error('食事の紐づけ項目を設定してください');
+  const typeWeight = resolveAskenTypeId('weight', { dataType: 4, unitName: 'kg', iconName: 'weight', title: ASKEN_DEFAULT_TITLES.weight });
+  const typeBowel = resolveAskenTypeId('bowel', { dataType: 10, iconName: 'toilet', title: ASKEN_DEFAULT_TITLES.bowel });
+  const typePhys = resolveAskenTypeId('phys', { dataType: 10, iconName: 'period', title: ASKEN_DEFAULT_TITLES.phys });
+  const replaceTypeIds = new Set([typeWeight, typeBowel, typePhys].filter(Boolean));
 
   let records = lsGetRecords().filter(r => !(r.date === dateStr && replaceTypeIds.has(parseInt(r.typeId))));
   let nextId = records.reduce((m, r) => Math.max(m, parseInt(r.id) || 0), 0);
@@ -1500,12 +1589,14 @@ async function importAskenDay(data) {
   }
 
   const weight = normalizeAskenWeight(data.weight);
-  if (weight) push(typeWeight, { value: weight });
+  if (weight && typeWeight) push(typeWeight, { value: weight });
 
-  if (data.bowel === 'yes') push(typeBowel, { value: '1' });
-  else if (data.bowel === 'no') push(typeBowel, { value: '0' });
+  if (typeBowel) {
+    if (data.bowel === 'yes') push(typeBowel, { value: '1' });
+    else if (data.bowel === 'no') push(typeBowel, { value: '0' });
+  }
 
-  if (data.physiology) push(typePhys, { value: '1' });
+  if (data.physiology && typePhys) push(typePhys, { value: '1' });
 
   lsSetRecords(records);
   appTypes = lsGetTypes().map(t => ({ ...t, id: parseInt(t.id), dataType: parseInt(t.dataType) }));
@@ -1517,6 +1608,54 @@ async function importAskenDay(data) {
 
   firestoreBackupDay(dateStr).catch(() => {});
   firestoreBackupMeta().catch(() => {});
+}
+
+async function firestorePullAskenInbox() {
+  if (!currentUser) return 0;
+  try {
+    const inboxRef = userCol('asken_inbox');
+    const snapshot = await getDocs(inboxRef);
+    if (snapshot.empty) return 0;
+    const dates = [];
+    for (const docSnap of snapshot.docs) {
+      await importAskenDay(docSnap.data());
+      await deleteDoc(docSnap.ref);
+      dates.push(docSnap.id);
+    }
+    if (dates.length) {
+      showToast(`✅ あすけん ${dates.length}日分を同期`);
+      renderTodayPage();
+      if (currentPage === 'history') renderCalendar();
+    }
+    return dates.length;
+  } catch (e) {
+    console.warn('あすけん受信箱の取り込み失敗:', e);
+    return 0;
+  }
+}
+
+async function cleanupOrphanRecords() {
+  const disabledIds = new Set(
+    lsGetTypes().filter(t => t.disabled).map(t => parseInt(t.id))
+  );
+  if (!disabledIds.size) {
+    showToast('削除済み項目はありません');
+    return;
+  }
+  const all = lsGetRecords();
+  const removed = all.filter(r => disabledIds.has(parseInt(r.typeId)));
+  if (!removed.length) {
+    showToast('削除済み項目の記録はありません');
+    return;
+  }
+  if (!confirm(`削除済み項目の記録 ${removed.length}件を消しますか？`)) return;
+  const dates = new Set(removed.map(r => r.date));
+  lsSetRecords(all.filter(r => !disabledIds.has(parseInt(r.typeId))));
+  for (const d of dates) await firestoreBackupDay(d);
+  firestoreBackupMeta().catch(() => {});
+  showToast(`✅ ${removed.length}件の記録を削除しました`);
+  renderTodayPage();
+  renderSettingsPage();
 }
 
 async function runAskenImport(text) {
@@ -1554,6 +1693,29 @@ document.getElementById('askenImportFile').addEventListener('change', async e =>
     console.error(err);
   }
   e.target.value = '';
+});
+
+document.getElementById('saveAskenMapBtn').addEventListener('click', () => {
+  saveAskenMapFromUI();
+  showToast('✅ 紐づけを保存しました');
+});
+
+document.getElementById('pullAskenInboxBtn').addEventListener('click', async () => {
+  document.getElementById('importStatus').textContent = '⏳ あすけん受信箱を確認中...';
+  const n = await firestorePullAskenInbox();
+  document.getElementById('importStatus').textContent = n
+    ? `✅ ${n}日分を取り込みました`
+    : '受信箱に新しいデータはありません';
+});
+
+document.getElementById('cleanupOrphanBtn').addEventListener('click', () => {
+  cleanupOrphanRecords();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && currentUser) {
+    firestorePullAskenInbox().catch(() => {});
+  }
 });
 
 // ==============================
@@ -1987,6 +2149,7 @@ async function startApp() {
   calMonth = today.getMonth();
 
   updateHeaderDate();
+  await firestorePullAskenInbox();
   await renderTodayPage();
   renderSettingsPage();
 }
