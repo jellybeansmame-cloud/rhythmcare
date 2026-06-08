@@ -390,7 +390,21 @@
       <p>RhythmCare.sqlite3 をタップして選択</p>
       <input type="file" id="importFile" accept=".sqlite3,.db,.sqlite" style="display:none">
     </div>
-    <div id="importStatus" style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:16px;"></div>
+    <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+      <div class="settings-title" style="margin-bottom:8px;">あすけん同期（1日分）</div>
+      <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
+        PCで <code style="font-size:11px;">sync_day.py</code> を実行したあと、下の欄にJSONを貼り付けて「反映する」を押してください。
+      </p>
+      <textarea id="askenPasteArea" placeholder='{"source":"asken","date":"2026-06-07",...}'
+        style="width:100%;min-height:100px;border:1.5px solid var(--border);border-radius:10px;padding:10px;font-size:12px;font-family:'DM Mono',monospace;background:var(--surface2);color:var(--text);resize:vertical;margin-bottom:8px;"></textarea>
+      <button type="button" id="askenPasteBtn" class="save-btn" style="margin-top:0;margin-bottom:10px;">反映する</button>
+      <div class="import-area" id="askenImportArea" style="margin-bottom:0;">
+        <div class="import-icon">📄</div>
+        <p style="font-size:13px;">または JSONファイルを選択（PC向け）</p>
+        <input type="file" id="askenImportFile" accept=".json,application/json" style="display:none">
+      </div>
+    </div>
+    <div id="importStatus" style="font-size:13px;color:var(--text2);text-align:center;margin-bottom:16px;margin-top:12px;"></div>
   </div>
 
 
@@ -1397,6 +1411,117 @@ async function importData(data) {
   document.getElementById('importStatus').textContent = '⏳ Firestoreにバックアップ中...';
   firestoreFullBackup(data).catch(e => console.warn('バックアップ失敗:', e));
 }
+
+// ==============================
+// あすけん同期JSONインポート
+// ==============================
+const ASKEN_MEAL_LABELS = { breakfast: '朝食', lunch: '昼食', dinner: '夕食', sweets: '間食' };
+
+function ensureAskenType(title, { dataType, unitName, iconName }) {
+  const types = lsGetTypes();
+  const found = types.find(t => t.title === title && !t.disabled);
+  if (found) return parseInt(found.id);
+  const maxId = types.reduce((m, t) => Math.max(m, parseInt(t.id) || 0), 0);
+  const newType = { id: maxId + 1, dataType, title, unitName: unitName || null, iconName };
+  types.push(newType);
+  lsSetTypes(types);
+  return newType.id;
+}
+
+function formatAskenMeals(meals, totalKcal) {
+  if (!meals) return '';
+  const lines = [];
+  for (const key of Object.keys(ASKEN_MEAL_LABELS)) {
+    const items = meals[key] || [];
+    if (!items.length) continue;
+    const sectionKcal = items.reduce((s, i) => s + (parseFloat(i.kcal) || 0), 0);
+    lines.push(`【${ASKEN_MEAL_LABELS[key]}】${Math.round(sectionKcal)}kcal`);
+    items.forEach(item => {
+      lines.push(`・${item.name} ×${item.quantity} (${item.kcal}kcal)`);
+    });
+    lines.push('');
+  }
+  if (totalKcal) lines.push(`1日合計: ${totalKcal}kcal`);
+  return lines.join('\n').trim();
+}
+
+async function importAskenDay(data) {
+  if (!data || data.source !== 'asken' || !data.date) {
+    throw new Error('あすけん同期JSONの形式が正しくありません');
+  }
+
+  const dateStr = data.date;
+  const typeMeal = ensureAskenType('食事記録', { dataType: 14, iconName: 'f_n' });
+  const typeWeight = ensureAskenType('体重', { dataType: 4, unitName: 'kg', iconName: 'weight' });
+  const typeBowel = ensureAskenType('お通じ', { dataType: 10, iconName: 'toilet' });
+  const typePhys = ensureAskenType('生理', { dataType: 10, iconName: 'period' });
+  const askenTypeIds = new Set([typeMeal, typeWeight, typeBowel, typePhys]);
+
+  let records = lsGetRecords().filter(r => !(r.date === dateStr && askenTypeIds.has(parseInt(r.typeId))));
+  let nextId = records.reduce((m, r) => Math.max(m, parseInt(r.id) || 0), 0);
+
+  const push = (typeId, fields) => {
+    records.push({ id: ++nextId, typeId, date: dateStr, value: null, subValue: null, textValue: null, ...fields });
+  };
+
+  const mealText = formatAskenMeals(data.meals, data.meal_total_kcal);
+  if (mealText) push(typeMeal, { textValue: mealText });
+
+  if (data.weight) push(typeWeight, { value: String(data.weight) });
+
+  if (data.bowel === 'yes') push(typeBowel, { value: '1' });
+  else if (data.bowel === 'no') push(typeBowel, { value: '0' });
+
+  if (data.physiology) push(typePhys, { value: '1' });
+
+  lsSetRecords(records);
+  appTypes = lsGetTypes().map(t => ({ ...t, id: parseInt(t.id), dataType: parseInt(t.dataType) }));
+
+  for (const tid of askenTypeIds) {
+    if (!appDisplist.map(id => parseInt(id)).includes(tid)) appDisplist.push(tid);
+  }
+  await saveDisplist();
+
+  firestoreBackupDay(dateStr).catch(() => {});
+  firestoreBackupMeta().catch(() => {});
+}
+
+async function runAskenImport(text) {
+  document.getElementById('importStatus').textContent = '⏳ あすけんデータを読み込み中...';
+  const data = JSON.parse(text);
+  await importAskenDay(data);
+  document.getElementById('importStatus').textContent = `✅ ${data.date} をインポートしました`;
+  showToast(`✅ ${data.date} を反映しました`);
+  document.getElementById('askenPasteArea').value = '';
+  renderTodayPage();
+  renderSettingsPage();
+}
+
+document.getElementById('askenPasteBtn').addEventListener('click', async () => {
+  const text = document.getElementById('askenPasteArea').value.trim();
+  if (!text) { showToast('⚠️ JSONを貼り付けてください'); return; }
+  try {
+    await runAskenImport(text);
+  } catch (err) {
+    document.getElementById('importStatus').textContent = '❌ インポート失敗: ' + err.message;
+    console.error(err);
+  }
+});
+
+document.getElementById('askenImportArea').addEventListener('click', () => {
+  document.getElementById('askenImportFile').click();
+});
+document.getElementById('askenImportFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    await runAskenImport(await file.text());
+  } catch (err) {
+    document.getElementById('importStatus').textContent = '❌ インポート失敗: ' + err.message;
+    console.error(err);
+  }
+  e.target.value = '';
+});
 
 // ==============================
 // トースト
