@@ -2,8 +2,8 @@ name: Asuken Sync
 
 on:
   schedule:
-    # 毎日 24:00 JST = 0:00 JST (15:00 UTC)
-    - cron: "0 15 * * *"
+    # 毎日 1:00 JST (16:00 UTC)
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 jobs:
@@ -32,5 +32,6 @@ jobs:
           ASKEN_EMAIL: ${{ secrets.ASKEN_EMAIL }}
           ASKEN_PASSWORD: ${{ secrets.ASKEN_PASSWORD }}
         run: |
-          DATE=$(python -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Asia/Tokyo')).strftime('%Y-%m-%d'))")
+          # 1:00 JST 実行 = 日付は翌日なので「前日分」を取得
+          DATE=$(python -c "from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo('Asia/Tokyo')).date() - timedelta(days=1)).strftime('%Y-%m-%d'))")
           python asken-sync/sync_day.py --push --date "$DATE"

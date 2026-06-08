@@ -472,9 +472,11 @@
     </div>
     <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
       <div class="settings-title" style="margin-bottom:8px;">あすけん自動同期</div>
-      <p id="askenSyncStatusText" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
-        毎日24:00頃にクラウドから自動取得し、スマホを開くと反映されます。
+      <p id="askenSyncHelpText" style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:8px;">
+        毎日<strong>1:00</strong>に<strong>前日分</strong>をクラウドから自動取得します。スマホを開くと反映されます。<br>
+        <span style="font-size:11px;">※1:00を過ぎてから前日分を追記しても、自動では再取得されません。</span>
       </p>
+      <p id="askenSyncStatusText" style="font-size:12px;color:var(--text);line-height:1.6;margin-bottom:10px;padding:8px 10px;background:var(--surface2);border-radius:8px;border:1px solid var(--border);"></p>
       <div id="askenCredentialsSection" style="margin-bottom:14px;padding:12px;border:1.5px solid var(--green);border-radius:12px;background:var(--surface2);">
         <div style="font-size:13px;font-weight:700;margin-bottom:8px;">あすけんログイン（自動同期用・推奨）</div>
         <p style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:10px;">
@@ -1822,7 +1824,7 @@ function renderAskenSyncStatusPanel() {
   const el = document.getElementById('askenSyncStatusText');
   if (!el) return;
   if (!askenSyncStatus) {
-    el.textContent = '毎日24:00頃にクラウドから自動取得します（初回はログイン設定が必要です）';
+    el.textContent = '同期ステータス: まだ記録がありません（初回はログイン設定後、1:00頃に自動実行）';
     return;
   }
   const parts = [];
