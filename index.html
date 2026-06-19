@@ -1684,11 +1684,33 @@ function normalizeAskenWeight(val) {
   return m ? m[0] : null;
 }
 
+function looksLikeAskenMealText(text) {
+  if (!text) return false;
+  return text.includes(ASKEN_MEAL_MARKER)
+    || /【(?:1日|朝食|昼食|夕食|間食)】/.test(text)
+    || text.includes('1日合計:');
+}
+
+function looksLikeAskenExerciseText(text) {
+  if (!text) return false;
+  return text.includes(ASKEN_EXERCISE_MARKER) || /【運動】/.test(text);
+}
+
+function applyAskenSyncedText(existingText, syncText, marker, isAskenContent) {
+  if (!syncText) return existingText || null;
+  const existing = existingText || '';
+  let manual = '';
+  if (existing.includes(marker)) {
+    manual = existing.split(marker)[0].trimEnd();
+  } else if (existing.trim() && !isAskenContent(existing)) {
+    manual = existing.trimEnd();
+  }
+  if (!manual) return syncText;
+  return manual + marker + syncText;
+}
+
 function mergeMealText(existingText, mealText) {
-  if (!mealText) return existingText || null;
-  const base = (existingText || '').split(ASKEN_MEAL_MARKER)[0].trimEnd();
-  if (!base) return mealText;
-  return base + ASKEN_MEAL_MARKER + mealText;
+  return applyAskenSyncedText(existingText, mealText, ASKEN_MEAL_MARKER, looksLikeAskenMealText);
 }
 
 function ensureAskenType(title, { dataType, unitName, iconName }) {
@@ -1703,10 +1725,12 @@ function ensureAskenType(title, { dataType, unitName, iconName }) {
 }
 
 function mergeExerciseMemoText(existingText, exerciseText) {
-  if (!exerciseText) return existingText || null;
-  const base = (existingText || '').split(ASKEN_EXERCISE_MARKER)[0].trimEnd();
-  if (!base) return exerciseText;
-  return base + ASKEN_EXERCISE_MARKER + exerciseText;
+  return applyAskenSyncedText(
+    existingText,
+    exerciseText,
+    ASKEN_EXERCISE_MARKER,
+    looksLikeAskenExerciseText,
+  );
 }
 
 function formatPfcLine(pfc) {
@@ -1776,7 +1800,20 @@ async function importAskenDay(data) {
   const typeExerciseCheck = resolveAskenTypeId('exerciseCheck', { dataType: 10, iconName: 'exercise', title: ASKEN_DEFAULT_TITLES.exerciseCheck });
   const replaceTypeIds = new Set([typeWeight, typeBowel, typePhys, typeExerciseCheck].filter(Boolean));
 
-  let records = lsGetRecords().filter(r => !(r.date === dateStr && replaceTypeIds.has(parseInt(r.typeId))));
+  const existingMeal = lsGetRecords().find(
+    r => r.date === dateStr && parseInt(r.typeId) === typeMeal,
+  );
+  const existingMemo = typeExerciseMemo
+    ? lsGetRecords().find(r => r.date === dateStr && parseInt(r.typeId) === typeExerciseMemo)
+    : null;
+
+  let records = lsGetRecords().filter(r => {
+    if (r.date !== dateStr) return true;
+    if (replaceTypeIds.has(parseInt(r.typeId))) return false;
+    if (parseInt(r.typeId) === typeMeal) return false;
+    if (typeExerciseMemo && parseInt(r.typeId) === typeExerciseMemo) return false;
+    return true;
+  });
   let nextId = records.reduce((m, r) => Math.max(m, parseInt(r.id) || 0), 0);
 
   const push = (typeId, fields) => {
@@ -1785,28 +1822,16 @@ async function importAskenDay(data) {
 
   const mealText = formatAskenMeals(data);
   if (mealText) {
-    const mealIdx = records.findIndex(r => r.date === dateStr && parseInt(r.typeId) === typeMeal);
-    if (mealIdx >= 0) {
-      records[mealIdx] = {
-        ...records[mealIdx],
-        textValue: mergeMealText(records[mealIdx].textValue, mealText),
-      };
-    } else {
-      push(typeMeal, { textValue: mealText });
-    }
+    push(typeMeal, {
+      textValue: mergeMealText(existingMeal?.textValue, mealText),
+    });
   }
 
   const exerciseText = formatAskenExercise(data.exercise);
   if (exerciseText && typeExerciseMemo) {
-    const memoIdx = records.findIndex(r => r.date === dateStr && parseInt(r.typeId) === typeExerciseMemo);
-    if (memoIdx >= 0) {
-      records[memoIdx] = {
-        ...records[memoIdx],
-        textValue: mergeExerciseMemoText(records[memoIdx].textValue, exerciseText),
-      };
-    } else {
-      push(typeExerciseMemo, { textValue: exerciseText });
-    }
+    push(typeExerciseMemo, {
+      textValue: mergeExerciseMemoText(existingMemo?.textValue, exerciseText),
+    });
   }
 
   if (data.exercise && data.exercise.has_exercise && typeExerciseCheck) {
@@ -1851,9 +1876,12 @@ async function firestorePullAskenInbox() {
       dates.push(docSnap.id);
     }
     if (dates.length) {
-      showToast(`✅ あすけん ${dates.length}日分を同期`);
+      showToast(`✅ あすけん ${dates.length}日分を同期（${dates.join(', ')}）`);
       renderTodayPage();
-      if (currentPage === 'history') renderCalendar();
+      if (currentPage === 'history') {
+        renderCalendar();
+        renderHistoryList();
+      }
     }
     return dates.length;
   } catch (e) {
