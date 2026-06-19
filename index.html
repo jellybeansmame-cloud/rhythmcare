@@ -1696,12 +1696,35 @@ function looksLikeAskenExerciseText(text) {
   return text.includes(ASKEN_EXERCISE_MARKER) || /【運動】/.test(text);
 }
 
+function sanitizeAskenMealText(text) {
+  if (!text || !text.includes(ASKEN_MEAL_MARKER)) return text;
+  const parts = text.split(ASKEN_MEAL_MARKER);
+  const before = parts[0].trimEnd();
+  const synced = parts.slice(1).join(ASKEN_MEAL_MARKER).trim();
+  if (before && !looksLikeAskenMealText(before)) {
+    return before + ASKEN_MEAL_MARKER + synced;
+  }
+  return synced;
+}
+
+function sanitizeAskenExerciseText(text) {
+  if (!text || !text.includes(ASKEN_EXERCISE_MARKER)) return text;
+  const parts = text.split(ASKEN_EXERCISE_MARKER);
+  const before = parts[0].trimEnd();
+  const synced = parts.slice(1).join(ASKEN_EXERCISE_MARKER).trim();
+  if (before && !looksLikeAskenExerciseText(before)) {
+    return before + ASKEN_EXERCISE_MARKER + synced;
+  }
+  return synced;
+}
+
 function applyAskenSyncedText(existingText, syncText, marker, isAskenContent) {
   if (!syncText) return existingText || null;
   const existing = existingText || '';
   let manual = '';
   if (existing.includes(marker)) {
-    manual = existing.split(marker)[0].trimEnd();
+    const before = existing.split(marker)[0].trimEnd();
+    manual = isAskenContent(before) ? '' : before;
   } else if (existing.trim() && !isAskenContent(existing)) {
     manual = existing.trimEnd();
   }
@@ -1783,6 +1806,32 @@ function formatAskenExercise(exercise) {
     if (menu.cal) lines.push(`  ${menu.cal}`);
   });
   return lines.join('\n').trim();
+}
+
+async function cleanupAskenDuplicateTexts() {
+  const typeMeal = resolveAskenTypeId('meal', { dataType: 14, iconName: 'f_n', title: ASKEN_DEFAULT_TITLES.meal });
+  const typeExerciseMemo = resolveAskenTypeId('exerciseMemo', { dataType: 14, iconName: 'f_n', title: ASKEN_DEFAULT_TITLES.exerciseMemo });
+  const touchedDates = new Set();
+  let changed = false;
+
+  const records = lsGetRecords().map(r => {
+    const typeId = parseInt(r.typeId);
+    if (!r.textValue) return r;
+    let cleaned = r.textValue;
+    if (typeMeal && typeId === typeMeal) cleaned = sanitizeAskenMealText(cleaned);
+    else if (typeExerciseMemo && typeId === typeExerciseMemo) cleaned = sanitizeAskenExerciseText(cleaned);
+    else return r;
+    if (cleaned === r.textValue) return r;
+    changed = true;
+    touchedDates.add(r.date);
+    return { ...r, textValue: cleaned };
+  });
+
+  if (!changed) return;
+  lsSetRecords(records);
+  for (const dateStr of touchedDates) {
+    await firestoreBackupDay(dateStr).catch(e => console.warn('バックアップ失敗:', e));
+  }
 }
 
 async function importAskenDay(data) {
@@ -1888,6 +1937,8 @@ async function firestorePullAskenInbox() {
     lastAskenInboxError = e;
     console.warn('あすけん受信箱の取り込み失敗:', e);
     return 0;
+  } finally {
+    await cleanupAskenDuplicateTexts();
   }
 }
 
