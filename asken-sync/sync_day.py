@@ -43,6 +43,13 @@ MEAL_LABELS = {
     "dinner": "夕食",
     "sweets": "間食",
 }
+# あすけん「アドバイスを見る」食事別ページ（/wsp/advice/{日付}/{id}）
+MEAL_ADVICE_IDS = {
+    "breakfast": "3",
+    "lunch": "4",
+    "dinner": "5",
+}
+NUTRIENT_KEYS = ("energy", "protein", "lipid", "carbohydrate")
 
 
 def parse_eat_datas(html: str) -> list[dict]:
@@ -63,6 +70,127 @@ def parse_eat_datas(html: str) -> list[dict]:
             }
         )
     return items
+
+
+def parse_meal_kcal(html: str) -> int | None:
+    match = re.search(r'id="meal_type_energy">(\d+)kcal', html)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def parse_nutrients(html: str) -> dict[str, str]:
+    nutrients: dict[str, str] = {}
+    for label, key in [
+        ("エネルギー", "energy"),
+        ("タンパク質", "protein"),
+        ("脂質", "lipid"),
+        ("炭水化物", "carbohydrate"),
+    ]:
+        pattern = (
+            rf'<li class="title">{label}</li>.*?'
+            rf'<li class="val[^"]*">([\d.]+)(?:kcal|g)</li>'
+        )
+        m = re.search(pattern, html, re.DOTALL)
+        if m:
+            nutrients[key] = m.group(1)
+    return nutrients
+
+
+def parse_advice(html: str) -> dict:
+    result: dict[str, Any] = {}
+
+    score_match = re.search(r"(\d+)\s*点", html)
+    if score_match:
+        result["health_score"] = int(score_match.group(1))
+
+    nutrients = parse_nutrients(html)
+    if nutrients:
+        result["daily_nutrients"] = nutrients
+
+    return result
+
+
+def compute_sweets_nutrients(
+    daily_nutrients: dict[str, str],
+    meal_pfc: dict[str, dict[str, str]],
+) -> dict[str, str] | None:
+    remainder: dict[str, str] = {}
+    for key in ("protein", "lipid", "carbohydrate"):
+        try:
+            daily_val = float(daily_nutrients.get(key) or 0)
+        except ValueError:
+            daily_val = 0.0
+        meal_sum = sum(
+            float((meal_pfc.get(meal_key) or {}).get(key) or 0)
+            for meal_key in MEAL_ADVICE_IDS
+        )
+        remainder[key] = str(round(max(0.0, daily_val - meal_sum), 1))
+    if daily_nutrients.get("energy"):
+        try:
+            daily_e = float(daily_nutrients["energy"])
+        except ValueError:
+            daily_e = 0.0
+        meal_e = sum(
+            float((meal_pfc.get(meal_key) or {}).get("energy") or 0)
+            for meal_key in MEAL_ADVICE_IDS
+        )
+        rem_e = round(max(0.0, daily_e - meal_e))
+        if rem_e > 0:
+            remainder["energy"] = str(int(rem_e))
+    return remainder or None
+
+
+def fetch_meal_pfc(
+    page: Page,
+    target_date: str,
+    meals: dict[str, list],
+    daily_nutrients: dict[str, str] | None,
+) -> dict[str, dict[str, str]]:
+    meal_pfc: dict[str, dict[str, str]] = {}
+    for meal_key, advice_id in MEAL_ADVICE_IDS.items():
+        if not meals.get(meal_key):
+            continue
+        url = f"{ASKEN_BASE}/wsp/advice/{target_date}/{advice_id}"
+        page.goto(url, wait_until="networkidle", timeout=60_000)
+        time.sleep(0.2)
+        if is_login_page(page):
+            raise AuthError("あすけんのログインが切れています")
+        nutrients = parse_nutrients(page.content())
+        if nutrients:
+            meal_pfc[meal_key] = nutrients
+
+    if meals.get("sweets") and daily_nutrients and meal_pfc:
+        sweets = compute_sweets_nutrients(daily_nutrients, meal_pfc)
+        if sweets:
+            meal_pfc["sweets"] = sweets
+
+    return meal_pfc
+
+
+def parse_exercise_datas(html: str) -> dict:
+    match = re.search(r"WspExerciseV2\.exeDatas\s*=\s*(\{.*?\});", html, re.DOTALL)
+    if not match:
+        return {}
+    try:
+        data = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        return {}
+    menus = []
+    for entry in data.get("menus") or []:
+        menus.append(
+            {
+                "name": entry.get("name", ""),
+                "amount": str(entry.get("amount", "")),
+                "used_calory": str(entry.get("used_calory", "")),
+                "cal": entry.get("cal", ""),
+            }
+        )
+    return {
+        "has_exercise": data.get("do") == "1" and bool(menus),
+        "total_calory": data.get("total"),
+        "menus": menus,
+    }
 
 
 def parse_comment_body(html: str) -> dict:
@@ -126,6 +254,7 @@ def parse_calendar_row(html: str, day: int) -> dict:
 
 def fetch_meals(page: Page, target_date: str) -> dict:
     meals: dict[str, list] = {}
+    meal_kcal: dict[str, int | None] = {}
     total_kcal = 0.0
     for key in MEAL_KEYS:
         url = f"{ASKEN_BASE}/wsp/meal/{key}/{target_date}"
@@ -133,8 +262,10 @@ def fetch_meals(page: Page, target_date: str) -> dict:
         time.sleep(0.5)
         if is_login_page(page):
             raise AuthError("あすけんのログインが切れています")
-        items = parse_eat_datas(page.content())
+        html = page.content()
+        items = parse_eat_datas(html)
         meals[key] = items
+        meal_kcal[key] = parse_meal_kcal(html)
         for item in items:
             try:
                 total_kcal += float(item.get("kcal") or 0)
@@ -142,8 +273,27 @@ def fetch_meals(page: Page, target_date: str) -> dict:
                 pass
     return {
         "meals": meals,
+        "meal_kcal": meal_kcal,
         "meal_total_kcal": int(total_kcal) if total_kcal else None,
     }
+
+
+def fetch_advice(page: Page, target_date: str) -> dict:
+    url = f"{ASKEN_BASE}/wsp/advice/{target_date}"
+    page.goto(url, wait_until="networkidle", timeout=60_000)
+    time.sleep(0.3)
+    if is_login_page(page):
+        raise AuthError("あすけんのログインが切れています")
+    return parse_advice(page.content())
+
+
+def fetch_exercise(page: Page, target_date: str) -> dict:
+    url = f"{ASKEN_BASE}/wsp/exercise/{target_date}"
+    page.goto(url, wait_until="networkidle", timeout=60_000)
+    time.sleep(0.3)
+    if is_login_page(page):
+        raise AuthError("あすけんのログインが切れています")
+    return parse_exercise_datas(page.content())
 
 
 def normalize_weight(val: str | None) -> str | None:
@@ -452,13 +602,22 @@ def sync_day(page: Page, target_date: str) -> dict:
     print(f"取得中: {target_date}")
     meal_data = fetch_meals(page, target_date)
     body_data = fetch_body(page, target_date)
+    advice_data = fetch_advice(page, target_date)
+    exercise_data = fetch_exercise(page, target_date)
+    daily_nutrients = advice_data.get("daily_nutrients")
+    meal_pfc = fetch_meal_pfc(page, target_date, meal_data["meals"], daily_nutrients)
 
     payload = {
         "source": "asken",
-        "version": 1,
+        "version": 2,
         "date": target_date,
         "meals": meal_data["meals"],
+        "meal_kcal": meal_data.get("meal_kcal"),
+        "meal_pfc": meal_pfc or None,
         "meal_total_kcal": meal_data["meal_total_kcal"],
+        "health_score": advice_data.get("health_score"),
+        "daily_nutrients": daily_nutrients,
+        "exercise": exercise_data or None,
         "weight": normalize_weight(body_data.get("weight")),
         "body_fat": body_data.get("body_fat"),
         "steps": body_data.get("steps"),
@@ -471,18 +630,42 @@ def sync_day(page: Page, target_date: str) -> dict:
 def print_summary(payload: dict) -> None:
     print("\n--- 取得結果 ---")
     print(f"日付: {payload['date']}")
+    if payload.get("health_score") is not None:
+        print(f"健康度: {payload['health_score']}点")
+    nutrients = payload.get("daily_nutrients") or {}
+    if nutrients:
+        print(
+            "1日PFC: "
+            f"P{nutrients.get('protein', '-')}g "
+            f"F{nutrients.get('lipid', '-')}g "
+            f"C{nutrients.get('carbohydrate', '-')}g"
+        )
+    meal_kcal = payload.get("meal_kcal") or {}
+    meal_pfc = payload.get("meal_pfc") or {}
     for key in MEAL_KEYS:
         items = payload["meals"].get(key, [])
         label = MEAL_LABELS[key]
+        kcal = meal_kcal.get(key)
+        pfc = meal_pfc.get(key)
         if items:
-            print(f"{label}: {len(items)}品")
-            for item in items[:3]:
+            header = f"{label}: {len(items)}品"
+            if kcal:
+                header += f" / {kcal}kcal"
+            if pfc:
+                header += (
+                    f" / P{pfc.get('protein', '-')}g F{pfc.get('lipid', '-')}g C{pfc.get('carbohydrate', '-')}g"
+                )
+            print(header)
+            for item in items:
                 print(f"  ・{item['name']} ({item['kcal']}kcal)")
-            if len(items) > 3:
-                print(f"  …他 {len(items) - 3}品")
         else:
             print(f"{label}: なし")
     print(f"合計カロリー: {payload.get('meal_total_kcal') or '-'}")
+    exercise = payload.get("exercise") or {}
+    if exercise.get("has_exercise"):
+        print(f"運動: {exercise.get('total_calory') or '-'}kcal ({len(exercise.get('menus') or [])}件)")
+    else:
+        print("運動: なし")
     print(f"体重: {payload.get('weight') or '-'} kg")
     print(f"体脂肪: {payload.get('body_fat') or '-'} %")
     print(f"お通じ: {payload.get('bowel') or '-'}")
@@ -579,9 +762,16 @@ def run_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def parse_date_arg(value: str) -> str:
+    datetime.strptime(value, "%Y-%m-%d")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="あすけん1日分をリズムケア用JSONに出力")
     parser.add_argument("--date", default=date.today().isoformat(), help="YYYY-MM-DD")
+    parser.add_argument("--from", dest="date_from", metavar="YYYY-MM-DD", help="一括取得の開始日")
+    parser.add_argument("--to", dest="date_to", metavar="YYYY-MM-DD", help="一括取得の終了日")
     parser.add_argument("--connect", action="store_true", help="start-chrome.ps1 のChromeに接続")
     parser.add_argument("--cdp-port", type=int, default=9222)
     parser.add_argument("-o", "--output", help="出力ファイル（省略時は export/日付.json）")
@@ -601,6 +791,27 @@ def main() -> int:
         help="接続中ChromeのCookieを Firestore asken_config/cookies に保存",
     )
     args = parser.parse_args()
+
+    if args.date_from or args.date_to:
+        if not args.date_from or not args.date_to:
+            parser.error("--from と --to は両方指定してください")
+        if args.connect:
+            parser.error("一括取得では --connect は使えません")
+        start = datetime.strptime(parse_date_arg(args.date_from), "%Y-%m-%d").date()
+        end = datetime.strptime(parse_date_arg(args.date_to), "%Y-%m-%d").date()
+        if start > end:
+            parser.error("--from は --to 以前の日付にしてください")
+        exit_code = 0
+        current = start
+        while current <= end:
+            args.date = current.isoformat()
+            if not args.output:
+                args.output = None
+            code = run_sync(args)
+            if code != 0:
+                exit_code = code
+            current = current.fromordinal(current.toordinal() + 1)
+        return exit_code
 
     if not args.connect and not args.push and not args.output:
         parser.error("--connect、--push、または -o のいずれかを指定してください")

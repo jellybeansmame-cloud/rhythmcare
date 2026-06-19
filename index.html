@@ -556,6 +556,8 @@
           <label style="font-size:13px;">体重<select id="askenMapWeight" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
           <label style="font-size:13px;">お通じ<select id="askenMapBowel" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
           <label style="font-size:13px;">生理<select id="askenMapPhys" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
+          <label style="font-size:13px;">運動メモ<select id="askenMapExerciseMemo" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
+          <label style="font-size:13px;">運動チェック<select id="askenMapExerciseCheck" style="width:100%;margin-top:4px;padding:8px;border-radius:8px;border:1.5px solid var(--border);"></select></label>
         </div>
         <button type="button" id="saveAskenMapBtn" class="add-btn" style="width:100%;margin-bottom:12px;">紐づけを保存</button>
         <div style="font-size:12px;color:var(--text2);line-height:1.6;margin-bottom:8px;">
@@ -857,8 +859,8 @@ async function firestoreRestore() {
 
 function mergeRecords(local, remote) {
   const byKey = new Map();
-  remote.forEach(r => byKey.set(`${r.date}:${parseInt(r.typeId)}`, { ...r }));
-  local.forEach(r => {
+  local.forEach(r => byKey.set(`${r.date}:${parseInt(r.typeId)}`, { ...r }));
+  remote.forEach(r => {
     const key = `${r.date}:${parseInt(r.typeId)}`;
     if (!byKey.has(key)) byKey.set(key, { ...r });
   });
@@ -1595,7 +1597,15 @@ async function importData(data) {
 // ==============================
 const ASKEN_MEAL_LABELS = { breakfast: '朝食', lunch: '昼食', dinner: '夕食', sweets: '間食' };
 const ASKEN_MEAL_MARKER = '\n--- あすけん同期 ---\n';
-const ASKEN_DEFAULT_TITLES = { meal: 'ごはんログ', weight: '体重', bowel: 'お通じ', phys: '生理' };
+const ASKEN_EXERCISE_MARKER = '\n--- あすけん運動同期 ---\n';
+const ASKEN_DEFAULT_TITLES = {
+  meal: 'ごはんログ',
+  weight: '体重',
+  bowel: 'お通じ',
+  phys: '生理',
+  exerciseMemo: 'メモ',
+  exerciseCheck: '何らかの運動（週4以上目標）',
+};
 
 function getDefaultAskenMap() {
   const map = {};
@@ -1626,6 +1636,8 @@ function saveAskenMapFromUI() {
     weight: read('askenMapWeight'),
     bowel: read('askenMapBowel'),
     phys: read('askenMapPhys'),
+    exerciseMemo: read('askenMapExerciseMemo'),
+    exerciseCheck: read('askenMapExerciseCheck'),
   };
   const meta = lsGetMeta();
   meta.askenMap = map;
@@ -1653,6 +1665,8 @@ function renderAskenMapUI() {
   fill('askenMapWeight', 'weight', t => [1, 4, 13, 15].includes(parseInt(t.dataType)));
   fill('askenMapBowel', 'bowel', t => parseInt(t.dataType) === 10);
   fill('askenMapPhys', 'phys', t => parseInt(t.dataType) === 10);
+  fill('askenMapExerciseMemo', 'exerciseMemo', t => parseInt(t.dataType) === 14);
+  fill('askenMapExerciseCheck', 'exerciseCheck', t => parseInt(t.dataType) === 10);
   const uidEl = document.getElementById('askenUserId');
   if (uidEl) uidEl.textContent = currentUser ? currentUser.uid : '（ログイン後に表示）';
 }
@@ -1688,20 +1702,62 @@ function ensureAskenType(title, { dataType, unitName, iconName }) {
   return newType.id;
 }
 
-function formatAskenMeals(meals, totalKcal) {
+function mergeExerciseMemoText(existingText, exerciseText) {
+  if (!exerciseText) return existingText || null;
+  const base = (existingText || '').split(ASKEN_EXERCISE_MARKER)[0].trimEnd();
+  if (!base) return exerciseText;
+  return base + ASKEN_EXERCISE_MARKER + exerciseText;
+}
+
+function formatPfcLine(pfc) {
+  if (!pfc) return '';
+  const p = pfc.protein ?? pfc.p;
+  const f = pfc.lipid ?? pfc.f;
+  const c = pfc.carbohydrate ?? pfc.c;
+  if (p == null && f == null && c == null) return '';
+  return `P${p ?? '-'}g F${f ?? '-'}g C${c ?? '-'}g`;
+}
+
+function formatAskenMeals(data) {
+  const meals = data.meals;
   if (!meals) return '';
   const lines = [];
+  const daily = data.daily_nutrients || {};
+  const dailyPfc = formatPfcLine(daily);
+  if (data.health_score != null || dailyPfc) {
+    const scorePart = data.health_score != null ? `健康度: ${data.health_score}点` : '';
+    const pfcPart = dailyPfc ? `1日PFC: ${dailyPfc}` : '';
+    lines.push(['【1日】', scorePart, pfcPart].filter(Boolean).join(' | '));
+    lines.push('');
+  }
+  const mealKcal = data.meal_kcal || {};
+  const mealPfc = data.meal_pfc || {};
   for (const key of Object.keys(ASKEN_MEAL_LABELS)) {
     const items = meals[key] || [];
     if (!items.length) continue;
-    const sectionKcal = items.reduce((s, i) => s + (parseFloat(i.kcal) || 0), 0);
-    lines.push(`【${ASKEN_MEAL_LABELS[key]}】${Math.round(sectionKcal)}kcal`);
+    const sectionKcal = mealKcal[key] || items.reduce((s, i) => s + (parseFloat(i.kcal) || 0), 0);
+    const pfcLine = formatPfcLine(mealPfc[key]);
+    const header = [`【${ASKEN_MEAL_LABELS[key]}】`, `${Math.round(sectionKcal)}kcal`, pfcLine].filter(Boolean).join(' ');
+    lines.push(header);
     items.forEach(item => {
       lines.push(`・${item.name} ×${item.quantity} (${item.kcal}kcal)`);
     });
     lines.push('');
   }
-  if (totalKcal) lines.push(`1日合計: ${totalKcal}kcal`);
+  if (data.meal_total_kcal) lines.push(`1日合計: ${data.meal_total_kcal}kcal`);
+  return lines.join('\n').trim();
+}
+
+function formatAskenExercise(exercise) {
+  if (!exercise || !exercise.has_exercise) return '';
+  const lines = ['【運動】'];
+  if (exercise.total_calory) lines.push(`消費カロリー: ${exercise.total_calory}kcal`);
+  (exercise.menus || []).forEach(menu => {
+    const amount = menu.amount ? ` ×${menu.amount}` : '';
+    const kcal = menu.used_calory ? ` (${menu.used_calory}kcal)` : '';
+    lines.push(`・${menu.name || '運動'}${amount}${kcal}`);
+    if (menu.cal) lines.push(`  ${menu.cal}`);
+  });
   return lines.join('\n').trim();
 }
 
@@ -1716,7 +1772,9 @@ async function importAskenDay(data) {
   const typeWeight = resolveAskenTypeId('weight', { dataType: 4, unitName: 'kg', iconName: 'weight', title: ASKEN_DEFAULT_TITLES.weight });
   const typeBowel = resolveAskenTypeId('bowel', { dataType: 10, iconName: 'toilet', title: ASKEN_DEFAULT_TITLES.bowel });
   const typePhys = resolveAskenTypeId('phys', { dataType: 10, iconName: 'period', title: ASKEN_DEFAULT_TITLES.phys });
-  const replaceTypeIds = new Set([typeWeight, typeBowel, typePhys].filter(Boolean));
+  const typeExerciseMemo = resolveAskenTypeId('exerciseMemo', { dataType: 14, iconName: 'f_n', title: ASKEN_DEFAULT_TITLES.exerciseMemo });
+  const typeExerciseCheck = resolveAskenTypeId('exerciseCheck', { dataType: 10, iconName: 'exercise', title: ASKEN_DEFAULT_TITLES.exerciseCheck });
+  const replaceTypeIds = new Set([typeWeight, typeBowel, typePhys, typeExerciseCheck].filter(Boolean));
 
   let records = lsGetRecords().filter(r => !(r.date === dateStr && replaceTypeIds.has(parseInt(r.typeId))));
   let nextId = records.reduce((m, r) => Math.max(m, parseInt(r.id) || 0), 0);
@@ -1725,7 +1783,7 @@ async function importAskenDay(data) {
     records.push({ id: ++nextId, typeId, date: dateStr, value: null, subValue: null, textValue: null, ...fields });
   };
 
-  const mealText = formatAskenMeals(data.meals, data.meal_total_kcal);
+  const mealText = formatAskenMeals(data);
   if (mealText) {
     const mealIdx = records.findIndex(r => r.date === dateStr && parseInt(r.typeId) === typeMeal);
     if (mealIdx >= 0) {
@@ -1736,6 +1794,23 @@ async function importAskenDay(data) {
     } else {
       push(typeMeal, { textValue: mealText });
     }
+  }
+
+  const exerciseText = formatAskenExercise(data.exercise);
+  if (exerciseText && typeExerciseMemo) {
+    const memoIdx = records.findIndex(r => r.date === dateStr && parseInt(r.typeId) === typeExerciseMemo);
+    if (memoIdx >= 0) {
+      records[memoIdx] = {
+        ...records[memoIdx],
+        textValue: mergeExerciseMemoText(records[memoIdx].textValue, exerciseText),
+      };
+    } else {
+      push(typeExerciseMemo, { textValue: exerciseText });
+    }
+  }
+
+  if (data.exercise && data.exercise.has_exercise && typeExerciseCheck) {
+    push(typeExerciseCheck, { value: '1' });
   }
 
   const weight = normalizeAskenWeight(data.weight);
@@ -1751,17 +1826,20 @@ async function importAskenDay(data) {
   lsSetRecords(records);
   appTypes = lsGetTypes().map(t => ({ ...t, id: parseInt(t.id), dataType: parseInt(t.dataType) }));
 
-  for (const tid of [typeWeight, typeBowel, typePhys]) {
-    if (!appDisplist.map(id => parseInt(id)).includes(tid)) appDisplist.push(tid);
+  for (const tid of [typeWeight, typeBowel, typePhys, typeExerciseMemo, typeExerciseCheck]) {
+    if (tid && !appDisplist.map(id => parseInt(id)).includes(tid)) appDisplist.push(tid);
   }
   await saveDisplist();
 
-  firestoreBackupDay(dateStr).catch(() => {});
-  firestoreBackupMeta().catch(() => {});
+  await firestoreBackupDay(dateStr).catch(e => console.warn('バックアップ失敗:', e));
+  await firestoreBackupMeta().catch(e => console.warn('metaバックアップ失敗:', e));
 }
+
+let lastAskenInboxError = null;
 
 async function firestorePullAskenInbox() {
   if (!currentUser) return 0;
+  lastAskenInboxError = null;
   try {
     const inboxRef = userCol('asken_inbox');
     const snapshot = await getDocs(inboxRef);
@@ -1779,6 +1857,7 @@ async function firestorePullAskenInbox() {
     }
     return dates.length;
   } catch (e) {
+    lastAskenInboxError = e;
     console.warn('あすけん受信箱の取り込み失敗:', e);
     return 0;
   }
@@ -2000,9 +2079,13 @@ document.getElementById('saveAskenMapBtn').addEventListener('click', () => {
 document.getElementById('pullAskenInboxBtn').addEventListener('click', async () => {
   document.getElementById('importStatus').textContent = '⏳ あすけん受信箱を確認中...';
   const n = await firestorePullAskenInbox();
-  document.getElementById('importStatus').textContent = n
-    ? `✅ ${n}日分を取り込みました`
-    : '受信箱に新しいデータはありません';
+  if (n) {
+    document.getElementById('importStatus').textContent = `✅ ${n}日分を取り込みました`;
+  } else if (lastAskenInboxError) {
+    document.getElementById('importStatus').textContent = '❌ 取り込み失敗: ' + lastAskenInboxError.message;
+  } else {
+    document.getElementById('importStatus').textContent = '受信箱に新しいデータはありません（取り込み済みの可能性があります）';
+  }
 });
 
 document.getElementById('cleanupOrphanBtn').addEventListener('click', () => {
@@ -2470,14 +2553,10 @@ async function startApp() {
     }
   } else {
     appDisplist = meta.displist ? meta.displist.map(id => parseInt(id)) : [];
-    // バックグラウンドでFirestoreと同期
-    firestoreRestore().then(ok => {
-      if (ok) {
-        appTypes = lsGetTypes().map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
-        const syncedMeta = lsGetMeta();
-        appDisplist = syncedMeta.displist ? syncedMeta.displist.map(id => parseInt(id)) : appDisplist;
-      }
-    }).catch(()=>{});
+    await firestoreRestore().catch(() => {});
+    appTypes = lsGetTypes().map(t => ({...t, id: parseInt(t.id), dataType: parseInt(t.dataType)}));
+    const syncedMeta = lsGetMeta();
+    appDisplist = syncedMeta.displist ? syncedMeta.displist.map(id => parseInt(id)) : appDisplist;
   }
 
   const today = new Date();
