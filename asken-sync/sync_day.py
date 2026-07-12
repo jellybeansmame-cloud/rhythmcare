@@ -33,6 +33,14 @@ CHROME_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
+STEALTH_ARGS = ["--disable-blink-features=AutomationControlled"]
+LOGIN_EMAIL_SEL = 'input[name="CustomerMember[email]"], #CustomerMemberEmail'
+LOGIN_PASS_SEL = 'input[name="CustomerMember[passwd_plain]"], #CustomerMemberPasswdPlain'
+LOGIN_SUBMIT_SEL = (
+    'input[type="image"][name="Submit[submit]"], '
+    '#SubmitSubmit, '
+    'input[name="Submit[submit]"]'
+)
 CONFIG_PATH = Path(__file__).parent / "firebase_config.json"
 CREDENTIALS_PATH = Path(__file__).parent / "asken_credentials.json"
 
@@ -349,9 +357,10 @@ def is_login_page(page: Page) -> bool:
         return True
     html = page.content()
     return (
-        'id="login_form"' in html
-        or 'id="indexForm"' in html
+        'name="CustomerMember[email]"' in html
         or 'id="CustomerMemberEmail"' in html
+        or 'id="login_form"' in html
+        or 'id="indexForm"' in html
     )
 
 
@@ -367,13 +376,16 @@ def is_authenticated(page: Page, probe_date: str) -> bool:
 def submit_login_form(page: Page, email: str, password: str) -> None:
     if not is_login_page(page):
         goto_asken(page, f"{ASKEN_BASE}/login")
-    page.fill("#CustomerMemberEmail", email)
-    page.fill("#CustomerMemberPasswdPlain", password)
+    email_input = page.locator(LOGIN_EMAIL_SEL).first
+    email_input.wait_for(state="visible", timeout=60_000)
+    email_input.fill(email)
+    page.locator(LOGIN_PASS_SEL).first.fill(password)
+    submit = page.locator(LOGIN_SUBMIT_SEL).first
     try:
         with page.expect_navigation(wait_until="domcontentloaded", timeout=60_000):
-            page.click("#SubmitSubmit")
+            submit.click()
     except Exception:
-        page.click("#SubmitSubmit")
+        submit.click()
         page.wait_for_load_state("domcontentloaded", timeout=60_000)
     time.sleep(0.8)
 
@@ -548,11 +560,18 @@ def save_auth_local(storage_state: dict) -> None:
 
 
 def launch_headless(playwright, storage_state: dict | None, cookies: list[dict] | None) -> tuple[Browser, Page]:
-    browser = playwright.chromium.launch(headless=True)
-    context_kwargs: dict[str, Any] = {"locale": "ja-JP", "user_agent": CHROME_UA}
+    browser = playwright.chromium.launch(headless=True, args=STEALTH_ARGS)
+    context_kwargs: dict[str, Any] = {
+        "locale": "ja-JP",
+        "user_agent": CHROME_UA,
+        "viewport": {"width": 1280, "height": 720},
+    }
     if storage_state:
         context_kwargs["storage_state"] = storage_state
     context = browser.new_context(**context_kwargs)
+    context.add_init_script(
+        "Object.defineProperty(navigator, 'webdriver', { get: () => undefined });"
+    )
     if cookies and not storage_state:
         context.add_cookies(cookies)
     page = context.new_page()
