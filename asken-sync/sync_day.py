@@ -355,6 +355,29 @@ def is_login_page(page: Page) -> bool:
     )
 
 
+def is_authenticated(page: Page, probe_date: str) -> bool:
+    """食事ページで eatDatas が取れるか確認（1回目ログインだけでは未認証のことがある）。"""
+    url = f"{ASKEN_BASE}/wsp/meal/breakfast/{probe_date}"
+    goto_asken(page, url, retries=2)
+    if is_login_page(page):
+        return False
+    return "V2WspMeal.eatDatas" in page.content()
+
+
+def submit_login_form(page: Page, email: str, password: str) -> None:
+    if not is_login_page(page):
+        goto_asken(page, f"{ASKEN_BASE}/login")
+    page.fill("#CustomerMemberEmail", email)
+    page.fill("#CustomerMemberPasswdPlain", password)
+    try:
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=60_000):
+            page.click("#SubmitSubmit")
+    except Exception:
+        page.click("#SubmitSubmit")
+        page.wait_for_load_state("domcontentloaded", timeout=60_000)
+    time.sleep(0.8)
+
+
 def load_asken_credentials() -> dict | None:
     email = os.environ.get("ASKEN_EMAIL", "").strip()
     password = os.environ.get("ASKEN_PASSWORD", "").strip()
@@ -389,23 +412,24 @@ def load_asken_credentials() -> dict | None:
     return None
 
 
-def login_with_credentials(page: Page, email: str, password: str) -> None:
-    print("メールアドレスでログイン中...")
-    page.goto(f"{ASKEN_BASE}/login", wait_until="domcontentloaded", timeout=60_000)
-    page.fill("#CustomerMemberEmail", email)
-    page.fill("#CustomerMemberPasswdPlain", password)
-    try:
-        with page.expect_navigation(wait_until="domcontentloaded", timeout=60_000):
-            page.click("#SubmitSubmit")
-    except Exception:
-        page.click("#SubmitSubmit")
-        page.wait_for_load_state("domcontentloaded", timeout=60_000)
-    time.sleep(0.5)
-    if is_login_page(page):
-        raise AuthError(
-            "ログインに失敗しました。メールアドレスとパスワードを確認してください。"
-        )
-    print("ログイン成功")
+def login_with_credentials(
+    page: Page,
+    email: str,
+    password: str,
+    probe_date: str | None = None,
+) -> None:
+    probe = probe_date or date.today().isoformat()
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        print(f"メールアドレスでログイン中... ({attempt}/{max_attempts})")
+        submit_login_form(page, email, password)
+        if is_authenticated(page, probe):
+            print("ログイン成功")
+            return
+        print("セッションが確立されていません。再ログインを試みます...")
+    raise AuthError(
+        "ログインに失敗しました。メールアドレスとパスワードを確認してください。"
+    )
 
 
 def connect_chrome(playwright, port: int) -> tuple[Any, Page]:
@@ -492,9 +516,7 @@ def open_asken_session(playwright, target_date: str) -> tuple[Any, Page, bool]:
     storage_state, cookies = load_auth_cookies_only()
     if storage_state or cookies:
         browser, page = launch_headless(playwright, storage_state, cookies)
-        probe_url = f"{ASKEN_BASE}/wsp/meal/breakfast/{target_date}"
-        goto_asken(page, probe_url)
-        if not is_login_page(page):
+        if is_authenticated(page, target_date):
             print("保存済みのログイン情報で接続しました")
             return browser, page, False
         print("保存済みCookieが無効です。メール/パスワードで再ログインします...")
@@ -508,7 +530,12 @@ def open_asken_session(playwright, target_date: str) -> tuple[Any, Page, bool]:
             "GitHub Secrets に ASKEN_EMAIL / ASKEN_PASSWORD を設定してください。"
         )
     browser, page = launch_headless(playwright, None, None)
-    login_with_credentials(page, credentials["email"], credentials["password"])
+    login_with_credentials(
+        page,
+        credentials["email"],
+        credentials["password"],
+        target_date,
+    )
     return browser, page, True
 
 
