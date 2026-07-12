@@ -34,4 +34,5 @@ jobs:
         run: |
           # 1:00 JST 実行 = 日付は翌日なので「前日分」を取得
           DATE=$(python -c "from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo('Asia/Tokyo')).date() - timedelta(days=1)).strftime('%Y-%m-%d'))")
+          echo "Sync target date: $DATE"
           python asken-sync/sync_day.py --push --date "$DATE"

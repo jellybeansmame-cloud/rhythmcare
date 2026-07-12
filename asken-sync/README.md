@@ -59,9 +59,14 @@ GitHub → Actions → **Asuken Sync** → **Run workflow**
 
 ## ログインエラー時
 
-- メール/パスワード方式: リズムケア設定でパスワードを確認・再保存
-- Google ログイン方式: `refresh-cookies.bat` をダブルクリック
-- Actions を手動実行して確認
+GitHub Actions が連続で失敗する場合:
+
+1. PC で `refresh-cookies.bat` をダブルクリック（あすけんに Chrome でログインした状態で実行）
+2. リズムケア設定 →「あすけんログイン」でパスワードを確認・再保存
+3. GitHub Secrets の `ASKEN_EMAIL` / `ASKEN_PASSWORD` が最新か確認
+4. Actions → **Asuken Sync** → **Run workflow** で手動再実行
+
+失敗理由はリズムケア設定の「あすけん同期ステータス」にも表示されます。
 
 ## 過去データの一括取得
 

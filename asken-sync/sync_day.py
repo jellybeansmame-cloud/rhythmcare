@@ -152,8 +152,7 @@ def fetch_meal_pfc(
         if not meals.get(meal_key):
             continue
         url = f"{ASKEN_BASE}/wsp/advice/{target_date}/{advice_id}"
-        page.goto(url, wait_until="networkidle", timeout=60_000)
-        time.sleep(0.2)
+        goto_asken(page, url)
         if is_login_page(page):
             raise AuthError("あすけんのログインが切れています")
         nutrients = parse_nutrients(page.content())
@@ -258,8 +257,7 @@ def fetch_meals(page: Page, target_date: str) -> dict:
     total_kcal = 0.0
     for key in MEAL_KEYS:
         url = f"{ASKEN_BASE}/wsp/meal/{key}/{target_date}"
-        page.goto(url, wait_until="networkidle", timeout=60_000)
-        time.sleep(0.5)
+        goto_asken(page, url)
         if is_login_page(page):
             raise AuthError("あすけんのログインが切れています")
         html = page.content()
@@ -280,8 +278,7 @@ def fetch_meals(page: Page, target_date: str) -> dict:
 
 def fetch_advice(page: Page, target_date: str) -> dict:
     url = f"{ASKEN_BASE}/wsp/advice/{target_date}"
-    page.goto(url, wait_until="networkidle", timeout=60_000)
-    time.sleep(0.3)
+    goto_asken(page, url)
     if is_login_page(page):
         raise AuthError("あすけんのログインが切れています")
     return parse_advice(page.content())
@@ -289,8 +286,7 @@ def fetch_advice(page: Page, target_date: str) -> dict:
 
 def fetch_exercise(page: Page, target_date: str) -> dict:
     url = f"{ASKEN_BASE}/wsp/exercise/{target_date}"
-    page.goto(url, wait_until="networkidle", timeout=60_000)
-    time.sleep(0.3)
+    goto_asken(page, url)
     if is_login_page(page):
         raise AuthError("あすけんのログインが切れています")
     return parse_exercise_datas(page.content())
@@ -308,8 +304,7 @@ def fetch_body(page: Page, target_date: str) -> dict:
     body: dict = {}
 
     comment_url = f"{ASKEN_BASE}/wsp/comment/{target_date}"
-    page.goto(comment_url, wait_until="networkidle", timeout=60_000)
-    time.sleep(0.3)
+    goto_asken(page, comment_url)
     if is_login_page(page):
         raise AuthError("あすけんのログインが切れています")
     body.update(parse_comment_body(page.content()))
@@ -332,6 +327,21 @@ def fetch_body(page: Page, target_date: str) -> dict:
 
 class AuthError(Exception):
     pass
+
+
+def goto_asken(page: Page, url: str, *, retries: int = 3) -> None:
+    last_exc: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
+            time.sleep(0.4)
+            return
+        except Exception as exc:
+            last_exc = exc
+            print(f"ページ取得リトライ ({attempt}/{retries}): {url} — {exc}")
+            time.sleep(1.0)
+    if last_exc:
+        raise last_exc
 
 
 def is_login_page(page: Page) -> bool:
@@ -381,15 +391,15 @@ def load_asken_credentials() -> dict | None:
 
 def login_with_credentials(page: Page, email: str, password: str) -> None:
     print("メールアドレスでログイン中...")
-    page.goto(f"{ASKEN_BASE}/login", wait_until="networkidle", timeout=60_000)
+    page.goto(f"{ASKEN_BASE}/login", wait_until="domcontentloaded", timeout=60_000)
     page.fill("#CustomerMemberEmail", email)
     page.fill("#CustomerMemberPasswdPlain", password)
     try:
-        with page.expect_navigation(wait_until="networkidle", timeout=60_000):
+        with page.expect_navigation(wait_until="domcontentloaded", timeout=60_000):
             page.click("#SubmitSubmit")
     except Exception:
         page.click("#SubmitSubmit")
-        page.wait_for_load_state("networkidle", timeout=60_000)
+        page.wait_for_load_state("domcontentloaded", timeout=60_000)
     time.sleep(0.5)
     if is_login_page(page):
         raise AuthError(
@@ -434,7 +444,7 @@ def normalize_cookie_list(raw: Any) -> list[dict]:
     return cookies
 
 
-def load_auth_from_sources() -> tuple[dict | None, list[dict] | None]:
+def load_auth_cookies_only() -> tuple[dict | None, list[dict] | None]:
     env_state = os.environ.get("ASKEN_STORAGE_STATE_JSON")
     if env_state:
         state = json.loads(env_state)
@@ -453,19 +463,53 @@ def load_auth_from_sources() -> tuple[dict | None, list[dict] | None]:
         cookies = normalize_cookie_list(json.loads(COOKIES_PATH.read_text(encoding="utf-8")))
         return None, cookies
 
-    db, uid = get_firestore()
-    snap = db.collection("users").document(uid).collection("asken_config").document("cookies").get()
-    if snap.exists:
-        data = snap.to_dict() or {}
-        if data.get("storage_state"):
-            state = data["storage_state"]
-            return state, state.get("cookies")
-        if data.get("cookies"):
-            return None, normalize_cookie_list(data)
+    try:
+        db, uid = get_firestore()
+        snap = db.collection("users").document(uid).collection("asken_config").document("cookies").get()
+        if snap.exists:
+            data = snap.to_dict() or {}
+            if data.get("storage_state"):
+                state = data["storage_state"]
+                return state, state.get("cookies")
+            if data.get("cookies"):
+                return None, normalize_cookie_list(data)
+    except Exception as exc:
+        print(f"FirestoreのCookie読み込みスキップ: {exc}")
+    return None, None
+
+
+def load_auth_from_sources() -> tuple[dict | None, list[dict] | None]:
+    storage_state, cookies = load_auth_cookies_only()
+    if storage_state or cookies:
+        return storage_state, cookies
 
     raise FileNotFoundError(
         "ログイン情報が見つかりません。refresh-cookies.bat を実行してください。"
     )
+
+
+def open_asken_session(playwright, target_date: str) -> tuple[Any, Page, bool]:
+    storage_state, cookies = load_auth_cookies_only()
+    if storage_state or cookies:
+        browser, page = launch_headless(playwright, storage_state, cookies)
+        probe_url = f"{ASKEN_BASE}/wsp/meal/breakfast/{target_date}"
+        goto_asken(page, probe_url)
+        if not is_login_page(page):
+            print("保存済みのログイン情報で接続しました")
+            return browser, page, False
+        print("保存済みCookieが無効です。メール/パスワードで再ログインします...")
+        browser.close()
+
+    credentials = load_asken_credentials()
+    if not credentials:
+        raise FileNotFoundError(
+            "あすけんのログイン情報がありません。"
+            "リズムケア設定でメール/パスワードを保存するか、"
+            "GitHub Secrets に ASKEN_EMAIL / ASKEN_PASSWORD を設定してください。"
+        )
+    browser, page = launch_headless(playwright, None, None)
+    login_with_credentials(page, credentials["email"], credentials["password"])
+    return browser, page, True
 
 
 def save_auth_local(storage_state: dict) -> None:
@@ -692,34 +736,30 @@ def run_sync(args: argparse.Namespace) -> int:
                     if not args.push and not args.output:
                         return 0
             else:
-                credentials = load_asken_credentials()
-                if credentials:
-                    used_credentials = True
-                    browser, page = launch_headless(p, None, None)
-                    login_with_credentials(
-                        page, credentials["email"], credentials["password"]
+                try:
+                    browser, page, used_credentials = open_asken_session(p, args.date)
+                except FileNotFoundError as exc:
+                    push_status(
+                        ok=False,
+                        error="no_cookies",
+                        message=str(exc),
                     )
-                else:
-                    try:
-                        storage_state, cookies = load_auth_from_sources()
-                    except FileNotFoundError as exc:
-                        push_status(
-                            ok=False,
-                            error="no_cookies",
-                            message=(
-                                "あすけんのログイン情報がありません。"
-                                "リズムケア設定でメール/パスワードを保存するか、"
-                                "GitHub Secrets に ASKEN_EMAIL / ASKEN_PASSWORD を設定してください。"
-                            ),
-                        )
-                        print(f"エラー: {exc}")
-                        return 1
-                    browser, page = launch_headless(p, storage_state, cookies)
+                    print(f"エラー: {exc}")
+                    return 1
 
             payload = sync_day(page, args.date)
+            if used_credentials and payload:
+                try:
+                    upload_auth_to_firestore(collect_storage_state(page))
+                except Exception as exc:
+                    print(f"Cookie更新スキップ: {exc}")
         except AuthError as exc:
             err = "auth_failed" if used_credentials else "cookie_expired"
-            push_status(ok=False, error=err, message=str(exc))
+            hint = (
+                " PCで refresh-cookies.bat を実行するか、"
+                "リズムケア設定のあすけんログイン情報を確認してください。"
+            )
+            push_status(ok=False, error=err, message=str(exc) + hint)
             print(f"認証エラー: {exc}")
             return 1
         except Exception as exc:
