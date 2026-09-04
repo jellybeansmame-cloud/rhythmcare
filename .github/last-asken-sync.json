@@ -1,5 +1,5 @@
 {
-  "lastSyncedDate": null,
-  "lastRunAt": null,
-  "note": "GitHub Actions があすけん同期成功時に自動更新します（60日放置による workflow 停止防止）"
+  "lastSyncedDate": "2026-09-04",
+  "lastRunAt": "2026-09-04T21:46:11Z",
+  "workflowRunId": 33922533884
 }
