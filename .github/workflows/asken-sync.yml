@@ -6,6 +6,9 @@ on:
     - cron: "0 16 * * *"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   sync:
     runs-on: ubuntu-latest
@@ -26,6 +29,7 @@ jobs:
           playwright install chromium
 
       - name: Sync from Asuken
+        id: sync
         env:
           FIREBASE_UID: ${{ secrets.FIREBASE_UID }}
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
@@ -34,5 +38,30 @@ jobs:
         run: |
           # 1:00 JST 実行 = 日付は翌日なので「前日分」を取得
           DATE=$(python -c "from datetime import datetime, timedelta; from zoneinfo import ZoneInfo; print((datetime.now(ZoneInfo('Asia/Tokyo')).date() - timedelta(days=1)).strftime('%Y-%m-%d'))")
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
           echo "Sync target date: $DATE"
           python asken-sync/sync_day.py --push --date "$DATE"
+
+      - name: Record sync activity
+        if: success()
+        run: |
+          DATE="${{ steps.sync.outputs.date }}"
+          RUN_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python -c "
+          import json
+          from pathlib import Path
+          Path('.github/last-asken-sync.json').write_text(
+              json.dumps({
+                  'lastSyncedDate': '$DATE',
+                  'lastRunAt': '$RUN_AT',
+                  'workflowRunId': ${{ github.run_id }},
+              }, ensure_ascii=False, indent=2) + '\n',
+              encoding='utf-8',
+          )
+          "
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/last-asken-sync.json
+          git diff --staged --quiet && echo "No changes to commit" && exit 0
+          git commit -m "chore: asken sync activity ($DATE)"
+          git push

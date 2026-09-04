@@ -57,6 +57,8 @@ GitHub → Actions → **Asuken Sync** → **Run workflow**
 
 成功後、スマホでリズムケアを開くと自動で反映されます。
 
+同期成功時、GitHub Actions が `.github/last-asken-sync.json` を更新して push します（60日放置で定期実行が止まるのを防ぐため）。
+
 ## ログインエラー時
 
 GitHub Actions が連続で失敗する場合:
